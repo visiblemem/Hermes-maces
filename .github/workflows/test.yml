@@ -5,6 +5,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: maces-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -15,5 +19,19 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[dev]'
-      - run: ruff check src tests
+      - run: ruff check src tests __init__.py
       - run: pytest -q
+      - name: Plugin manifest smoke test
+        run: |
+          python - <<'PY'
+          import importlib.util
+          import pathlib
+          import yaml
+          root = pathlib.Path('.')
+          manifest = yaml.safe_load((root / 'plugin.yaml').read_text())
+          assert manifest['manifest_version'] == 1
+          spec = importlib.util.spec_from_file_location('hermes_maces_plugin', root / '__init__.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          assert callable(module.register)
+          PY
