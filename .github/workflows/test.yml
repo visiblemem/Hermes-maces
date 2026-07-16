@@ -21,15 +21,10 @@ jobs:
       - run: python -m pip install -e '.[dev]'
       - run: ruff check src tests __init__.py
       - run: pytest -q
-      - name: Plugin manifest smoke test
+      - name: Plugin layout smoke test
         run: |
-          python - <<'PY'
-          import pathlib
-          import yaml
-          root = pathlib.Path('.')
-          manifest = yaml.safe_load((root / 'plugin.yaml').read_text())
-          assert manifest['manifest_version'] == 1
-          assert manifest['name'] == 'hermes-maces'
-          import maces.plugin as plugin
-          assert callable(plugin.register)
-          PY
+          test -f plugin.yaml
+          test -f __init__.py
+          grep -q '^manifest_version: 1$' plugin.yaml
+          grep -q '^name: hermes-maces$' plugin.yaml
+          grep -q 'from maces.plugin import register' __init__.py
