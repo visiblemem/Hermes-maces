@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from hashlib import sha256
+from itertools import combinations
 
-from .capabilities import CapabilityBus
 from .influence import InfluenceEngine
-from .learning import LearningExecutor
-from .models import CognitiveEvent, LearningIntent, PromotionProposal, StagedArtifact
+from .models import CognitiveEvent, EventKind, LearningProposal, PromotionProposal, StagedArtifact
 from .policy import MacesPolicy
 from .store import CognitiveStore
 
@@ -15,105 +14,86 @@ def _key(value: str) -> str:
 
 
 class MacesEngine:
-    def __init__(
-        self,
-        store: CognitiveStore,
-        policy: MacesPolicy | None = None,
-        capabilities: CapabilityBus | None = None,
-    ) -> None:
+    def __init__(self, store: CognitiveStore, policy: MacesPolicy | None = None) -> None:
         self.store = store
         self.policy = policy or MacesPolicy()
-        self.capabilities = capabilities or CapabilityBus()
         self.influence_engine = InfluenceEngine(store, self.policy)
-        self.learning_executor = LearningExecutor(self.capabilities, self.policy)
 
     def observe(self, event: CognitiveEvent) -> dict[str, int]:
         event.validate()
         if not self.store.save_event(event):
-            return {"patterns": 0, "gaps": 0, "proposals": 0}
-        patterns = 0
-        for label in self._pattern_labels(event):
-            self.store.upsert_pattern(
-                _key(label), label, max(0.05, event.confidence * 0.12), event.event_id
-            )
-            patterns += 1
+            return {"patterns": 0, "edges": 0, "gaps": 0, "proposals": 0}
+        if event.payload.get("operator_driven") is False or event.payload.get("from_staging") is True:
+            return {"patterns": 0, "edges": 0, "gaps": 0, "proposals": 0}
+
+        labels = self._labels(event)
+        keys = {label: _key(label) for label in labels}
+        positive = event.kind in {EventKind.ANSWER_CONFIRMED, EventKind.DECISION_CONFIRMED}
+        negative = event.kind == EventKind.ANSWER_CORRECTED
+        weak = event.kind in {EventKind.RETRIEVAL_USED, EventKind.TASK_COMPLETED}
+
+        for label, key in keys.items():
+            row = self.store.pattern(key)
+            old = float(row["weight"]) if row else 0.0
+            if positive:
+                weight = self.policy.reinforce(old)
+            elif negative:
+                weight = self.policy.penalize(old)
+            elif weak:
+                weight = min(1.0, old + 0.02 * event.confidence)
+            else:
+                weight = old
+            self.store.put_pattern(key, label, weight, event.event_id, event.occurred_at)
+
+        edges = 0
+        for a, b in combinations(keys.values(), 2):
+            row = self.store.edge(a, b)
+            old = float(row["weight"]) if row else 0.0
+            weight = self.policy.penalize(old) if negative else self.policy.reinforce(old)
+            self.store.put_edge(a, b, weight, event.occurred_at)
+            edges += 1
+        self.store.normalize_edges(self.policy.outbound_edge_cap)
+
         gaps = proposals = 0
-        for topic, reason, priority, sources in self._gaps(event):
+        for topic, kind, reason, priority in self._gaps(event):
             gap_key = _key(topic)
-            self.store.upsert_gap(gap_key, topic, reason, priority)
+            self.store.upsert_gap(gap_key, topic, kind, reason, priority)
             gaps += 1
-            intent = LearningIntent(
-                topic=topic,
-                reason=reason,
-                priority=priority,
-                required_evidence=sources,
-                strategy="adaptive",
-                gap_key=gap_key,
-            )
-            proposals += int(self.store.create_learning_proposal(intent))
-        return {"patterns": patterns, "gaps": gaps, "proposals": proposals}
+            p = LearningProposal(topic, reason, priority, ["primary"], gap_key)
+            proposals += int(self.store.create_learning_proposal(p))
 
-    def influence(self, subject: str):
-        return self.influence_engine.signal(subject)
+        return {"patterns": len(labels), "edges": edges, "gaps": gaps, "proposals": proposals}
 
-    def learn(self, intent: LearningIntent) -> StagedArtifact | None:
-        artifact = self.learning_executor.execute(intent)
-        if artifact is not None:
-            self.store.stage(artifact)
-        return artifact
+    def consolidate(self, now: str | None = None) -> dict[str, int]:
+        return self.store.decay(self.policy, now)
 
-    def stage_research(
-        self,
-        proposal_id: str,
-        *,
-        title: str,
-        content: str,
-        sources: list[dict[str, str]],
-        query_count: int,
-        confidence: float,
-    ) -> StagedArtifact:
-        self.policy.validate_research_budget(query_count, len(sources))
-        self.policy.validate_artifact(content)
-        proposal = self.store.get_learning(proposal_id)
-        if self.policy.require_learning_approval and proposal["status"] != "approved":
-            raise PermissionError("proposal must be approved before research")
-        artifact = StagedArtifact(
-            proposal_id=proposal_id,
-            title=title,
-            content=content,
-            sources=sources,
-            confidence=min(1.0, max(0.0, confidence)),
-        )
+    def influence(self, concepts: list[str] | str):
+        if isinstance(concepts, str):
+            concepts = [concepts]
+        return self.influence_engine.signal(concepts)
+
+    def stage_research(self, artifact: StagedArtifact) -> None:
         self.store.stage(artifact)
-        return artifact
 
-    def propose_promotion(
-        self, artifact_id: str, target_provider: str, target_path: str
-    ) -> PromotionProposal:
-        proposal = PromotionProposal(
-            artifact_id=artifact_id,
-            target_provider=target_provider,
-            target_path=target_path,
-        )
+    def propose_promotion(self, artifact_id: str, target_path: str) -> PromotionProposal:
+        proposal = PromotionProposal(artifact_id=artifact_id, target_path=target_path)
         self.store.create_promotion(proposal)
         return proposal
 
-    def _pattern_labels(self, event: CognitiveEvent) -> list[str]:
-        labels = [str(v).strip() for v in event.payload.get("patterns", []) if str(v).strip()]
-        if event.subject:
-            labels.append(f"subject:{event.subject.strip().lower()}")
-        return sorted(set(labels))
+    def _labels(self, event: CognitiveEvent) -> list[str]:
+        values = event.payload.get("concepts", event.payload.get("patterns", []))
+        labels = [str(v).strip().lower() for v in values if str(v).strip()]
+        return list(dict.fromkeys(labels))[:16]
 
-    def _gaps(self, event: CognitiveEvent) -> list[tuple[str, str, float, list[str]]]:
-        result = []
-        for item in event.payload.get("knowledge_gaps", []):
-            if isinstance(item, str):
-                topic, reason, priority, sources = item, "Observed unresolved knowledge need", 0.5, ["primary"]
-            else:
-                topic = str(item.get("topic", "")).strip()
-                reason = str(item.get("reason", "Observed unresolved knowledge need")).strip()
-                priority = float(item.get("priority", 0.5))
-                sources = [str(v) for v in item.get("required_sources", ["primary"])]
+    def _gaps(self, event: CognitiveEvent) -> list[tuple[str, str, str, float]]:
+        result: list[tuple[str, str, str, float]] = []
+        if event.kind == EventKind.GAP_OBSERVED:
+            topic = str(event.payload.get("topic", event.subject or "")).strip()
             if topic:
-                result.append((topic, reason, min(1.0, max(0.0, priority)), sources))
+                result.append((topic, "observed", "Hermes retrieval found no relevant explicit knowledge", 0.8))
+        for item in event.payload.get("knowledge_gaps", []):
+            topic = item if isinstance(item, str) else item.get("topic", "")
+            topic = str(topic).strip()
+            if topic:
+                result.append((topic, "observed", "Observed unresolved knowledge need", 0.6))
         return result
