@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import asdict
 from pathlib import Path
 
 from .adapters import HermesRuntimeAdapter
+from .capabilities import CapabilityBus
 from .engine import MacesEngine
-from .models import ActivationLevel
-from .policy import MacesPolicy
 from .store import CognitiveStore
 
 
@@ -18,7 +18,6 @@ def _load(path: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="maces")
     parser.add_argument("--db", default="maces.db")
-    parser.add_argument("--activation", choices=[v.value for v in ActivationLevel], default="shadow")
     sub = parser.add_subparsers(dest="command", required=True)
 
     observe = sub.add_parser("observe")
@@ -27,22 +26,32 @@ def main() -> None:
     inspect = sub.add_parser("inspect")
     inspect.add_argument("table")
 
+    influence = sub.add_parser("influence")
+    influence.add_argument("subject")
+
+    sub.add_parser("capabilities")
+
     approve = sub.add_parser("approve-learning")
     approve.add_argument("proposal_id")
 
     args = parser.parse_args()
     store = CognitiveStore(args.db)
-    policy = MacesPolicy(activation=ActivationLevel(args.activation))
-    engine = MacesEngine(store, policy)
+    bus = CapabilityBus()
+    engine = MacesEngine(store, capabilities=bus)
 
     if args.command == "observe":
         event = HermesRuntimeAdapter().normalize(_load(args.event_json))
-        print(json.dumps(engine.observe(event), ensure_ascii=False, indent=2))
+        output = engine.observe(event)
     elif args.command == "inspect":
-        print(json.dumps(store.list_table(args.table), ensure_ascii=False, indent=2))
-    elif args.command == "approve-learning":
+        output = store.list_table(args.table)
+    elif args.command == "influence":
+        output = asdict(engine.influence(args.subject))
+    elif args.command == "capabilities":
+        output = bus.capabilities()
+    else:
         store.set_learning_status(args.proposal_id, "approved")
-        print(json.dumps({"proposal_id": args.proposal_id, "status": "approved"}))
+        output = {"proposal_id": args.proposal_id, "status": "approved"}
+    print(json.dumps(output, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
