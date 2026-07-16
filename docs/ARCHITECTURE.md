@@ -1,81 +1,104 @@
 # Hermes MACES Architecture
 
-## Purpose
-
-MACES is a provider-neutral cognitive evolution substrate. It is not a memory store and it is not a canonical knowledge authority. It converts runtime and provider observations into machine-oriented cognitive state and governed learning work.
-
-## Layers
+## Position in the Hermes stack
 
 ```text
-1. Agent Runtime
-   - executes tasks
-   - emits normalized or adapter-compatible events
-
-2. Provider Adapters
-   - normalize source-specific records
-   - preserve source identity and authority
-   - never promote or rewrite source data
-
-3. Cognitive Substrate
-   - pattern accumulation
-   - epistemic gap detection
-   - learning proposal queue
-   - staging sandbox
-   - evolution journal
-
-4. External Governance
-   - approves learning work
-   - authorizes research budgets
-   - issues digest-bound promotion grants
-
-5. Canonical Providers
-   - Obsidian, wiki, graph, database, files, or another system
-   - remain outside MACES ownership
+Hermes Runtime
+    ↓
+Hermes Memory: episodic and personal continuity
+    ↓
+Obsidian / Wiki: approved explicit knowledge
+    ↓
+MACES: conceptual substrate and cognitive evolution
 ```
 
-## Activation levels
+MACES is the deepest layer. It is not queried like a memory store during ordinary use. It receives normalized experience after tasks and returns only compact, bounded `InfluenceSignal` objects before later reasoning.
 
-| Level | Behavior |
-|---|---|
-| `off` | No processing |
-| `shadow` | Observe and record only |
-| `advisory` | May expose bounded suggestions to runtime |
-| `research` | Approved learning proposals may create staged artifacts |
-| `promotion` | May create promotion proposals, but cannot execute canonical writes |
-
-## Authority model
-
-MACES artifacts have advisory authority only. A pattern is a weighted observation, not a fact. A gap is an unresolved question, not proof of absence. A staged artifact is unapproved research. A promotion proposal is only a request addressed to an external approval system.
-
-## Data flow
+## Dual cognitive loop
 
 ```text
-raw provider/runtime event
-        ↓ adapter
-CognitiveEvent
-        ↓ idempotent event log
-pattern updates + gap updates
-        ↓
-deduplicated LearningProposal
-        ↓ external approval
-bounded research
-        ↓
-StagedArtifact
-        ↓
-PromotionProposal + digest
-        ↓ external Approval Gate
-canonical provider transaction
+FAST LOOP — every meaningful task
+Runtime → Experience → CognitiveEvent → Observe → Pattern / Gap update
+   ▲                                                   │
+   └──────────── advisory InfluenceSignal ─────────────┘
+
+SLOW LOOP — event-count or schedule triggered
+Conceptual Substrate → Consolidation → Contradiction / Decay / Gap ranking
+        → LearningIntent → LearningStrategy → ResearchProvider
+        → Evidence validation → Staging → PromotionProposal
+        → ApprovalProvider → CanonicalProvider
+        → new approved knowledge → future experience
 ```
 
-## Non-goals
+The fast loop improves the next task without loading the complete substrate into context. The slow loop changes the system's long-term conceptual structure.
 
-- training or fine-tuning model weights;
-- replacing the runtime router;
-- owning user identity or permissions;
-- silently browsing or learning without policy authorization;
-- writing directly to canonical knowledge;
-- coupling the architecture to a specific memory vendor.
+## Always-on core
 
-## Initial implementation
+Installation enables the complete safe core immediately:
 
-The first implementation uses SQLite WAL for deterministic local state. Storage is an implementation detail behind `CognitiveStore`; future stores must preserve idempotency, append-only journal semantics, proposal deduplication, staging isolation, and promotion digest integrity.
+- event normalization and idempotent observation;
+- pattern, attention and confidence accumulation;
+- epistemic-gap detection;
+- learning-intent generation;
+- influence-signal generation;
+- staging isolation;
+- append-only evolution history.
+
+There are no activation levels. Availability of external actions is determined by installed capabilities.
+
+## Capability bus
+
+```text
+CapabilityBus
+├─ Runtime / Memory Adapters
+├─ ResearchProvider
+├─ ApprovalProvider
+├─ CanonicalProvider
+└─ Storage Provider boundary
+```
+
+Missing capabilities degrade naturally. Without research, a gap remains open. Without approval, a promotion remains a proposal. Without a canonical provider, nothing can leave Staging.
+
+## Influence contract
+
+MACES does not alter model weights, inject hidden facts or override routing. `InfluenceSignal` contains:
+
+- attention priorities;
+- known failure cautions;
+- concepts requiring verification;
+- optional reasoning suggestions;
+- aggregate confidence.
+
+The runtime may adopt or ignore each signal. Current user instructions and canonical knowledge always retain higher authority.
+
+## Autonomous learning pipeline
+
+```text
+EpistemicGap
+  → LearningIntent
+  → LearningStrategy selects evidence classes and validation rules
+  → CapabilityBus selects a compatible ResearchProvider
+  → bounded multi-query research
+  → provenance-preserving StagedArtifact
+  → digest-bound PromotionProposal
+  → external authorization
+  → canonical write transaction
+```
+
+A learning strategy is domain-sensitive: construction favors manufacturer, engineering and code sources; software favors official documentation and repositories; brand research favors official publications, interviews and operational evidence.
+
+## Authority and safety
+
+1. Current user instruction.
+2. Approved canonical knowledge.
+3. Runtime policy and permissions.
+4. Verified evidence.
+5. Memory and episodic context.
+6. MACES influence signals and inferred patterns.
+7. Staged research and unresolved hypotheses.
+
+MACES can influence reasoning only at levels 6–7. It cannot promote itself in this hierarchy.
+
+## Persistence
+
+The reference implementation uses SQLite WAL. Storage implementations must preserve event idempotency, proposal deduplication, append-only journal semantics, staging isolation and promotion digest integrity.
