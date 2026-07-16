@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from maces import CognitiveEvent, CognitiveStore, MacesEngine, StagedArtifact
+from maces import CognitiveEvent, CognitiveStore, MacesEngine, MacesPolicy, StagedArtifact
 from maces.plugin import register
 
 
@@ -68,10 +68,42 @@ def test_influence_is_statistics_only_and_bounded(tmp_path: Path) -> None:
     engine = MacesEngine(store)
     for i in range(8):
         engine.observe(event("answer.confirmed", ["design", f"concept-{i}"], f"e{i}"))
+    engine.observe(CognitiveEvent(
+        kind="gap.observed",
+        source="test",
+        event_id="gap",
+        subject="fire safety",
+        payload={"operator_driven": True},
+    ))
     rendered = engine.influence(["design"]).render()
     assert rendered.startswith("[intuition — advisory, unverified]")
     assert len(rendered) <= engine.policy.influence_max_chars
     assert rendered.count("\n-") <= engine.policy.influence_max_items
+
+
+def test_oversized_single_item_is_suppressed(tmp_path: Path) -> None:
+    store = CognitiveStore(tmp_path / "maces.db")
+    policy = MacesPolicy(influence_max_chars=100)
+    engine = MacesEngine(store, policy)
+    long_label = "x" * 500
+    engine.observe(event("answer.confirmed", [long_label], "long"))
+    rendered = engine.influence([long_label]).render()
+    assert len(rendered) <= policy.influence_max_chars
+
+
+def test_repeated_gap_creates_one_learning_proposal(tmp_path: Path) -> None:
+    store = CognitiveStore(tmp_path / "maces.db")
+    engine = MacesEngine(store)
+    for event_id in ("gap-1", "gap-2"):
+        engine.observe(CognitiveEvent(
+            kind="gap.observed",
+            source="test",
+            event_id=event_id,
+            subject="lighting optics",
+            payload={"operator_driven": True},
+        ))
+    proposals = store.list_table("learning_proposals")
+    assert len(proposals) == 1
 
 
 def test_hub_normalization_caps_outbound_weight(tmp_path: Path) -> None:
