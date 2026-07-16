@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from maces import CognitiveEvent, CognitiveStore, MacesEngine, StagedArtifact
+from maces.plugin import register
 
 
 def event(kind: str, concepts: list[str], event_id: str, **payload):
@@ -11,6 +12,10 @@ def event(kind: str, concepts: list[str], event_id: str, **payload):
         event_id=event_id,
         payload={"concepts": concepts, "operator_driven": True, **payload},
     )
+
+
+def test_native_plugin_entrypoint_is_callable() -> None:
+    assert callable(register)
 
 
 def test_idempotent_ingestion_and_edges(tmp_path: Path) -> None:
