@@ -1,79 +1,75 @@
 # Hermes MACES
 
-**Memory-Agnostic Cognitive Evolution Substrate**
+**Modular Adaptive Cognitive Evolution System**
 
-Hermes MACES is a standalone cognitive substrate that sits beneath an agent runtime and above any memory or knowledge provider. It observes normalized events, accumulates machine-oriented cognitive state, identifies epistemic gaps, proposes bounded learning work, stages research artifacts, and routes promotion proposals through an external approval authority.
+Hermes MACES is an install-and-run cognitive evolution plugin. It sits beneath Hermes memory and Obsidian knowledge, observes experience, consolidates machine-oriented cognition, detects epistemic gaps, generates bounded influence signals, and can extend itself through research, approval, memory, storage and canonical providers.
 
-MACES does not assume Obsidian, Hindsight, Mem0, Graphiti, SQLite session memory, vector databases, or any specific LLM framework.
+MACES does not replace Hermes Memory or Obsidian. They preserve experience and approved knowledge; MACES forms the deeper conceptual substrate that influences how the runtime approaches later tasks.
 
-## Core boundary
+## Closed-loop architecture
 
 ```text
-Agent runtime
-    ↓ CognitiveEvent
-Hermes MACES
-    ├─ pattern substrate
-    ├─ epistemic gap map
-    ├─ learning queue
-    ├─ staging sandbox
-    └─ evolution journal
-    ↓ PromotionProposal
-External Approval Gate
-    ↓ authorized write
-Any canonical knowledge system
+User → Hermes Runtime → Memory / Obsidian / Tools → Reasoning → Result
+          ▲                                          │
+          │                                          ▼
+          └──── bounded InfluenceSignal ← MACES ← CognitiveEvent
+                                      │
+                    fast loop: observe → reflect → influence
+                                      │
+                    slow loop: consolidate → gap → learn
+                                      │
+              LearningStrategy → Research Provider → Staging
+                                      │
+              PromotionProposal → Approval Provider → Canon
 ```
 
-## Safety invariants
-
-- MACES never treats inferred patterns as canonical facts.
-- Research output is written only to Staging.
-- Canonical writes require an external, digest-bound authorization grant.
-- Provider adapters normalize data but do not change source authority.
-- Runtime influence is disabled by default and activated by policy level.
-- Every state transition is auditable and replayable.
-
-## Quick start
+## Install and use
 
 ```bash
 python -m pip install -e '.[dev]'
 pytest -q
 ```
 
-Create a runtime event:
-
-```json
-{
-  "event_type": "task.completed",
-  "task_id": "task-001",
-  "subject": "commercial-display-design",
-  "confidence": 0.9,
-  "patterns": ["modular", "constructible", "prefabricated"],
-  "knowledge_gaps": [
-    {
-      "topic": "large acrylic suspension joints",
-      "reason": "Repeatedly requested but not yet supported by verified construction evidence",
-      "priority": 0.86,
-      "required_sources": ["manufacturer", "engineering", "code"]
-    }
-  ]
-}
-```
-
-Observe and inspect:
+MACES starts working as soon as the runtime emits events. There is no activation level.
 
 ```bash
 maces --db var/maces.db observe event.json
-maces --db var/maces.db inspect patterns
+maces --db var/maces.db influence commercial-display-design
+maces --db var/maces.db capabilities
 maces --db var/maces.db inspect gaps
-maces --db var/maces.db inspect learning_proposals
 ```
 
-The default activation level is `shadow`. Research and promotion proposal creation remain disabled until explicitly enabled by deterministic policy.
+Core capabilities are always available:
+
+- event observation and idempotent replay;
+- pattern and attention accumulation;
+- epistemic gap detection;
+- learning-intent generation;
+- bounded subconscious influence signals;
+- staging and evolution history.
+
+External capabilities are discovered from installed providers:
+
+- `ResearchProvider` performs autonomous evidence gathering;
+- `ApprovalProvider` authorizes sensitive learning or promotion;
+- `CanonicalProvider` writes approved artifacts to Obsidian, wiki, graph or another store;
+- runtime and memory adapters normalize Hermes or third-party events.
+
+When no research provider exists, MACES still detects and preserves the gap. When no canonical provider or approval grant exists, research remains in Staging.
+
+## Safety invariants
+
+- Influence signals are advisory priorities, not hidden facts or commands.
+- Inferred patterns never override current user instructions or canonical knowledge.
+- Research output is isolated in Staging.
+- Canonical writes require a digest-bound promotion proposal and external authorization.
+- Every event and state transition remains auditable and replayable.
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md)
+- [Complete architecture](docs/ARCHITECTURE.md)
+- [Provider development](docs/PROVIDERS.md)
 
 ## Status
 
-Clean-room implementation. This repository is intentionally separate from earlier Hermes memory-system specifications to avoid authority and migration ambiguity.
+Clean-room standalone implementation in `Hermes-maces`; it is intentionally separate from the previous Hermes memory-system repository.
