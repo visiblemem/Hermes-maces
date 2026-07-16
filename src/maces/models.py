@@ -78,7 +78,16 @@ class LearningProposal:
 
     @property
     def digest(self) -> str:
-        return sha256(dumps(asdict(self), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        # Identity is derived only from stable gap content. Runtime metadata such as
+        # proposal_id, created_at, status, and priority must not turn one unresolved
+        # gap into an unbounded series of duplicate learning proposals.
+        stable = {
+            "gap_key": self.gap_key,
+            "topic": self.topic.strip().lower(),
+            "reason": self.reason.strip(),
+            "required_sources": sorted(set(self.required_sources)),
+        }
+        return sha256(dumps(stable, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 @dataclass(slots=True)
