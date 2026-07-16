@@ -13,14 +13,6 @@ def utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-class ActivationLevel(StrEnum):
-    OFF = "off"
-    SHADOW = "shadow"
-    ADVISORY = "advisory"
-    RESEARCH = "research"
-    PROMOTION = "promotion"
-
-
 class ProposalStatus(StrEnum):
     PROPOSED = "proposed"
     APPROVED = "approved"
@@ -49,20 +41,45 @@ class CognitiveEvent:
 
 
 @dataclass(slots=True)
-class LearningProposal:
+class InfluenceSignal:
+    subject: str
+    attention: dict[str, float] = field(default_factory=dict)
+    cautions: list[str] = field(default_factory=list)
+    verify: list[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
+    confidence: float = 0.0
+    generated_at: str = field(default_factory=utc_now)
+
+
+@dataclass(slots=True)
+class LearningIntent:
     topic: str
     reason: str
     priority: float
-    required_sources: list[str]
+    required_evidence: list[str]
+    strategy: str
     gap_key: str
     status: ProposalStatus = ProposalStatus.PROPOSED
-    proposal_id: str = field(default_factory=lambda: str(uuid4()))
+    intent_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=utc_now)
 
     @property
     def digest(self) -> str:
         body = dumps(asdict(self), sort_keys=True, separators=(",", ":"))
         return sha256(body.encode()).hexdigest()
+
+
+LearningProposal = LearningIntent
+
+
+@dataclass(slots=True)
+class ResearchPlan:
+    intent_id: str
+    topic: str
+    queries: list[str]
+    source_types: list[str]
+    validation_rules: list[str]
+    stop_conditions: list[str]
 
 
 @dataclass(slots=True)
