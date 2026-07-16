@@ -1,75 +1,91 @@
 # Hermes MACES
 
-**Modular Adaptive Cognitive Evolution System**
+**The subconscious layer for Hermes.**
 
-Hermes MACES is an install-and-run cognitive evolution plugin. It sits beneath Hermes memory and Obsidian knowledge, observes experience, consolidates machine-oriented cognition, detects epistemic gaps, generates bounded influence signals, and can extend itself through research, approval, memory, storage and canonical providers.
+MACES sits beneath Hermes's existing memory architecture. It does not replace episodic memory, Obsidian, session history, tools, or the runtime. It passively absorbs operator-driven usage traces, consolidates weighted concepts and associations, detects epistemic gaps, and returns only compact advisory influence.
 
-MACES does not replace Hermes Memory or Obsidian. They preserve experience and approved knowledge; MACES forms the deeper conceptual substrate that influences how the runtime approaches later tasks.
+## Install
 
-## Closed-loop architecture
+```bash
+hermes plugins install jefferyzkj01/Hermes-maces --enable
+```
+
+Restart Hermes. No Python package installation, runtime patch, or manual hook wiring is required.
+
+Hermes installs the repo into `~/.hermes/plugins/Hermes-maces/`, loads `plugin.yaml`, and calls the root `register(ctx)` entrypoint.
+
+## Architecture
 
 ```text
-User → Hermes Runtime → Memory / Obsidian / Tools → Reasoning → Result
-          ▲                                          │
-          │                                          ▼
-          └──── bounded InfluenceSignal ← MACES ← CognitiveEvent
-                                      │
-                    fast loop: observe → reflect → influence
-                                      │
-                    slow loop: consolidate → gap → learn
-                                      │
-              LearningStrategy → Research Provider → Staging
-                                      │
-              PromotionProposal → Approval Provider → Canon
+User
+  ↓
+Hermes Runtime
+  ├─ episodic/session memory
+  ├─ Obsidian / canonical knowledge
+  └─ tools
+       ↓ usage traces
+┌─────────────────────────────────────────┐
+│ MACES — subconscious layer              │
+│                                         │
+│ Observe → reinforce / penalize → decay  │
+│         → concept nodes + associations  │
+│         → gaps → staging → proposals    │
+└─────────────────────────────────────────┘
+       │                         │
+       │ Influence              │ Surfacing
+       ▼                         ▼
+pre_llm_call advisory block   external approval gate
+       │                         │
+       └────────→ Hermes      explicit memory / canon
 ```
 
-## Install and use
+MACES communicates with the conscious system through exactly two channels:
 
-```bash
-python -m pip install -e '.[dev]'
-pytest -q
+1. **Influence** — statistics-only advisory context, never facts and never staged content.
+2. **Surfacing** — digest-bound promotion proposals; the only route from subconscious state to explicit memory.
+
+## What happens automatically
+
+After enablement, the plugin registers native Hermes hooks:
+
+- `pre_llm_call` — emits a bounded `[intuition — advisory, unverified]` block.
+- `post_llm_call` — absorbs completed-turn traces.
+- `post_tool_call` — absorbs retrieval/tool usage traces.
+- `maces_feedback` — records explicit operator `confirmed` or `corrected` feedback.
+
+State is stored locally at:
+
+```text
+~/.hermes/plugins/hermes-maces/data/subconscious.db
 ```
 
-MACES starts working as soon as the runtime emits events. There is no activation level.
+The SQLite state is disposable and rebuildable from its append-only journal. It is never a source of truth.
 
-```bash
-maces --db var/maces.db observe event.json
-maces --db var/maces.db influence commercial-display-design
-maces --db var/maces.db capabilities
-maces --db var/maces.db inspect gaps
-```
+## Learning dynamics
 
-Core capabilities are always available:
-
-- event observation and idempotent replay;
-- pattern and attention accumulation;
-- epistemic gap detection;
-- learning-intent generation;
-- bounded subconscious influence signals;
-- staging and evolution history.
-
-External capabilities are discovered from installed providers:
-
-- `ResearchProvider` performs autonomous evidence gathering;
-- `ApprovalProvider` authorizes sensitive learning or promotion;
-- `CanonicalProvider` writes approved artifacts to Obsidian, wiki, graph or another store;
-- runtime and memory adapters normalize Hermes or third-party events.
-
-When no research provider exists, MACES still detects and preserves the gap. When no canonical provider or approval grant exists, research remains in Staging.
+- Confirmation: `w ← w + 0.10 × (1 − w)`
+- Correction: `w ← w × 0.65`
+- Decay: `w ← w × exp(−days / 45)`
+- Prune below `0.02`
+- Co-occurring concepts form weighted association edges.
+- Outbound association weight is capped to prevent hub collapse.
+- Staging-originated material cannot reinforce itself.
 
 ## Safety invariants
 
-- Influence signals are advisory priorities, not hidden facts or commands.
-- Inferred patterns never override current user instructions or canonical knowledge.
-- Research output is isolated in Staging.
-- Canonical writes require a digest-bound promotion proposal and external authorization.
-- Every event and state transition remains auditable and replayable.
+- MACES never writes canon directly.
+- MACES never originates tool calls.
+- Influence never contains staged artifact text.
+- Current user instructions and approved knowledge outrank every MACES signal.
+- Disabling the plugin leaves normal Hermes behavior intact.
+- Every state transition is journaled and replayable.
 
-## Documentation
+## Development
 
-- [Complete architecture](docs/ARCHITECTURE.md)
-- [Provider development](docs/PROVIDERS.md)
+```bash
+python -m pip install pytest ruff
+PYTHONPATH=src pytest -q
+ruff check src tests __init__.py
+```
 
-## Status
-
-Clean-room standalone implementation in `Hermes-maces`; it is intentionally separate from the previous Hermes memory-system repository.
+See [SUBCONSCIOUS.md](SUBCONSCIOUS.md) for the normative specification and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for implementation detail.
