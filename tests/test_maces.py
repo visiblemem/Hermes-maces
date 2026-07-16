@@ -1,11 +1,9 @@
 from pathlib import Path
 
-import pytest
-
-from maces import ActivationLevel, CognitiveEvent, CognitiveStore, MacesEngine, MacesPolicy
+from maces import CapabilityBus, CognitiveEvent, CognitiveStore, MacesEngine
 
 
-def test_observation_creates_machine_state(tmp_path: Path) -> None:
+def test_install_and_observe_creates_machine_state(tmp_path: Path) -> None:
     store = CognitiveStore(tmp_path / "maces.db")
     engine = MacesEngine(store)
     result = engine.observe(CognitiveEvent(
@@ -30,26 +28,41 @@ def test_duplicate_event_is_idempotent(tmp_path: Path) -> None:
     assert engine.observe(event) == {"patterns": 0, "gaps": 0, "proposals": 0}
 
 
-def test_shadow_mode_cannot_research(tmp_path: Path) -> None:
+def test_influence_is_advisory_and_bounded(tmp_path: Path) -> None:
     store = CognitiveStore(tmp_path / "maces.db")
     engine = MacesEngine(store)
-    with pytest.raises(PermissionError):
-        engine.stage_research(
-            "missing", title="x", content="x", sources=[], query_count=0, confidence=0.5
-        )
+    for index in range(3):
+        engine.observe(CognitiveEvent(
+            kind="task.completed",
+            source="test",
+            subject="design",
+            event_id=f"event-{index}",
+            payload={"patterns": ["constructible"], "knowledge_gaps": ["fire safety"]},
+        ))
+    signal = engine.influence("design")
+    assert signal.subject == "design"
+    assert "constructible" in signal.attention
+    assert "fire safety" in signal.verify
+    assert signal.suggestions
 
 
-def test_research_writes_only_to_staging(tmp_path: Path) -> None:
+def test_research_without_provider_stops_at_intent(tmp_path: Path) -> None:
     store = CognitiveStore(tmp_path / "maces.db")
-    policy = MacesPolicy(activation=ActivationLevel.RESEARCH)
-    engine = MacesEngine(store, policy)
+    bus = CapabilityBus()
+    engine = MacesEngine(store, capabilities=bus)
+    assert bus.capabilities()["research"] == []
+    assert engine.capabilities.select_research(["official"]) is None
+
+
+def test_manual_research_writes_only_to_staging(tmp_path: Path) -> None:
+    store = CognitiveStore(tmp_path / "maces.db")
+    engine = MacesEngine(store)
     engine.observe(CognitiveEvent(
         kind="task.completed",
         source="test",
         payload={"knowledge_gaps": ["lighting optics"]},
     ))
     proposal = store.list_table("learning_proposals")[0]
-    store.set_learning_status(proposal["proposal_id"], "approved")
     artifact = engine.stage_research(
         proposal["proposal_id"],
         title="Lighting optics",
