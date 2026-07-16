@@ -12,7 +12,7 @@ hermes plugins install jefferyzkj01/Hermes-maces --enable
 
 Restart Hermes. No Python package installation, runtime patch, or manual hook wiring is required.
 
-Hermes installs the repo into `~/.hermes/plugins/Hermes-maces/`, loads `plugin.yaml`, and calls the root `register(ctx)` entrypoint.
+Hermes installs the repo under `~/.hermes/plugins/`, loads `plugin.yaml`, and calls the root `register(ctx)` entrypoint.
 
 ## Architecture
 
@@ -51,12 +51,13 @@ After enablement, the plugin registers native Hermes hooks:
 - `pre_llm_call` — emits a bounded `[intuition — advisory, unverified]` block.
 - `post_llm_call` — absorbs completed-turn traces.
 - `post_tool_call` — absorbs retrieval/tool usage traces.
+- `on_session_end` — applies background decay and pruning.
 - `maces_feedback` — records explicit operator `confirmed` or `corrected` feedback.
 
-State is stored locally at:
+State is stored inside the installed plugin directory:
 
 ```text
-~/.hermes/plugins/hermes-maces/data/subconscious.db
+<installed-plugin>/data/subconscious.db
 ```
 
 The SQLite state is disposable and rebuildable from its append-only journal. It is never a source of truth.
@@ -83,8 +84,8 @@ The SQLite state is disposable and rebuildable from its append-only journal. It 
 ## Development
 
 ```bash
-python -m pip install pytest ruff
-PYTHONPATH=src pytest -q
+python -m pip install -e '.[dev]'
+pytest -q
 ruff check src tests __init__.py
 ```
 
