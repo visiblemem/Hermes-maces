@@ -13,6 +13,15 @@ def utc_now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+class EventKind(StrEnum):
+    RETRIEVAL_USED = "retrieval.used"
+    ANSWER_CONFIRMED = "answer.confirmed"
+    ANSWER_CORRECTED = "answer.corrected"
+    TASK_COMPLETED = "task.completed"
+    DECISION_CONFIRMED = "decision.confirmed"
+    GAP_OBSERVED = "gap.observed"
+
+
 class ProposalStatus(StrEnum):
     PROPOSED = "proposed"
     APPROVED = "approved"
@@ -29,7 +38,6 @@ class CognitiveEvent:
     payload: dict[str, Any]
     subject: str | None = None
     confidence: float = 1.0
-    authority: str = "evidence"
     occurred_at: str = field(default_factory=utc_now)
     event_id: str = field(default_factory=lambda: str(uuid4()))
 
@@ -42,52 +50,35 @@ class CognitiveEvent:
 
 @dataclass(slots=True)
 class InfluenceSignal:
-    subject: str
-    attention: dict[str, float] = field(default_factory=dict)
-    cautions: list[str] = field(default_factory=list)
+    attention: list[tuple[str, float]] = field(default_factory=list)
+    associations: list[tuple[str, str, float]] = field(default_factory=list)
     verify: list[str] = field(default_factory=list)
-    suggestions: list[str] = field(default_factory=list)
     confidence: float = 0.0
-    generated_at: str = field(default_factory=utc_now)
+
+    def render(self) -> str:
+        items: list[str] = []
+        items.extend(f"prioritize {label} ({weight:.2f})" for label, weight in self.attention)
+        items.extend(f"consider {a} ↔ {b} ({weight:.2f})" for a, b, weight in self.associations)
+        items.extend(f"verify {topic}" for topic in self.verify)
+        if not items:
+            return ""
+        return "[intuition — advisory, unverified]\n" + "\n".join(f"- {item}" for item in items)
 
 
 @dataclass(slots=True)
-class LearningIntent:
+class LearningProposal:
     topic: str
     reason: str
     priority: float
-    required_evidence: list[str]
-    strategy: str
+    required_sources: list[str]
     gap_key: str
     status: ProposalStatus = ProposalStatus.PROPOSED
-    intent_id: str = field(default_factory=lambda: str(uuid4()))
+    proposal_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=utc_now)
 
     @property
-    def proposal_id(self) -> str:
-        return self.intent_id
-
-    @property
-    def required_sources(self) -> list[str]:
-        return self.required_evidence
-
-    @property
     def digest(self) -> str:
-        body = dumps(asdict(self), sort_keys=True, separators=(",", ":"))
-        return sha256(body.encode()).hexdigest()
-
-
-LearningProposal = LearningIntent
-
-
-@dataclass(slots=True)
-class ResearchPlan:
-    intent_id: str
-    topic: str
-    queries: list[str]
-    source_types: list[str]
-    validation_rules: list[str]
-    stop_conditions: list[str]
+        return sha256(dumps(asdict(self), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 @dataclass(slots=True)
@@ -104,7 +95,6 @@ class StagedArtifact:
 @dataclass(slots=True)
 class PromotionProposal:
     artifact_id: str
-    target_provider: str
     target_path: str
     operation: str = "create"
     proposal_id: str = field(default_factory=lambda: str(uuid4()))
@@ -112,5 +102,4 @@ class PromotionProposal:
 
     @property
     def digest(self) -> str:
-        body = dumps(asdict(self), sort_keys=True, separators=(",", ":"))
-        return sha256(body.encode()).hexdigest()
+        return sha256(dumps(asdict(self), sort_keys=True, separators=(",", ":")).encode()).hexdigest()
