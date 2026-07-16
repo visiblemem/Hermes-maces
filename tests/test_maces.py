@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from maces import CognitiveEvent, CognitiveStore, MacesEngine, MacesPolicy, StagedArtifact
+from maces import CognitiveEvent, CognitiveStore, LearningProposal, MacesEngine, MacesPolicy, StagedArtifact
 from maces.plugin import register
 
 
@@ -104,6 +104,24 @@ def test_repeated_gap_creates_one_learning_proposal(tmp_path: Path) -> None:
         ))
     proposals = store.list_table("learning_proposals")
     assert len(proposals) == 1
+
+
+def test_same_gap_key_has_one_identity_across_reasons() -> None:
+    observed = LearningProposal(
+        topic="lighting optics",
+        reason="Hermes retrieval found no relevant explicit knowledge",
+        priority=0.8,
+        required_sources=["primary"],
+        gap_key="stable-gap-key",
+    )
+    inferred = LearningProposal(
+        topic="Lighting Optics",
+        reason="Observed unresolved knowledge need",
+        priority=0.6,
+        required_sources=["official", "primary"],
+        gap_key="stable-gap-key",
+    )
+    assert observed.digest == inferred.digest
 
 
 def test_hub_normalization_caps_outbound_weight(tmp_path: Path) -> None:
