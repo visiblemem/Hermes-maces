@@ -78,15 +78,10 @@ class LearningProposal:
 
     @property
     def digest(self) -> str:
-        # Identity is derived only from stable gap content. Runtime metadata such as
-        # proposal_id, created_at, status, and priority must not turn one unresolved
-        # gap into an unbounded series of duplicate learning proposals.
-        stable = {
-            "gap_key": self.gap_key,
-            "topic": self.topic.strip().lower(),
-            "reason": self.reason.strip(),
-            "required_sources": sorted(set(self.required_sources)),
-        }
+        # A proposal represents one unresolved epistemic gap. Explanatory text,
+        # priority, evidence preferences, status, timestamps, and IDs may change
+        # without creating a new active proposal for the same gap.
+        stable = {"gap_key": self.gap_key}
         return sha256(dumps(stable, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
