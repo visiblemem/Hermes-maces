@@ -21,7 +21,10 @@ jobs:
       - run: python -m pip install -e '.[dev]'
       - run: ruff check src tests __init__.py
       - run: python -m compileall -q src __init__.py
-      - run: pytest -q -m "not e2e"
+      - name: Core dynamics tests
+        run: pytest -q tests/test_maces.py
+      - name: Repair acceptance tests
+        run: pytest -q tests/test_repair_legacy.py
       - name: Plugin and documentation contract
         run: |
           test -f plugin.yaml
