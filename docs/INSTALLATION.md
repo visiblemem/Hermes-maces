@@ -8,7 +8,7 @@ Record the Hermes version and MACES commit, back up the profile `config.yaml`, v
 
 ```bash
 hermes profile use default
-hermes plugins install jefferyzkj01/Hermes-maces --no-enable
+hermes plugins install visiblemem/Hermes-maces --no-enable
 ```
 
 Add the `plugins.entries.hermes-maces` section from `config.example.yaml` to the active profile's Hermes configuration. Do not use a `config.yaml` inside the repository as user configuration.
