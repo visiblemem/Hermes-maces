@@ -10,6 +10,8 @@ MACES stands for **Memory Association & Cognitive Evolution System**. It is desi
 
 Think of MACES as the AI equivalent of the human subconscious: it quietly accumulates experience beneath explicit memory and gradually shapes future reasoning without replacing conscious knowledge.
 
+> **Architecture and distribution are different concerns.** MACES is architecturally a subconscious subsystem, not a conventional optional plugin. Hermes currently distributes and registers it through the existing plugin infrastructure because that is the extension mechanism available in the host runtime.
+
 ## What MACES is
 
 Traditional memory systems answer questions such as:
@@ -55,7 +57,8 @@ MACES does **not**:
 - treat learned associations as verified facts;
 - originate tool calls or autonomous actions;
 - allow model output to confirm its own learned concepts;
-- inject arbitrary or unbounded prompts.
+- inject arbitrary or unbounded prompts;
+- become architecturally equivalent to an ordinary plugin merely because Hermes currently uses its plugin CLI to distribute it.
 
 MACES influences inference only through a bounded advisory context produced from validated, profile-local signals.
 
@@ -101,7 +104,7 @@ MACES should begin in **Shadow Mode**:
 
 During Shadow Mode, MACES can learn privacy-safe signals and build profile-local associations, but it injects no advisory context into model inference.
 
-The intended lifecycle is a per-profile local Shadow period followed by activation. Automatic, persistent per-profile activation is tracked in [Issue #9](https://github.com/visiblemem/Hermes-maces/issues/9). Until that runtime state machine is merged, the current Public Beta uses the explicit `shadow_mode` configuration switch and should remain in Shadow Mode until locally reviewed.
+The intended lifecycle is a per-profile local Shadow period followed by activation. Automatic, persistent per-profile activation is tracked in [Issue #9](https://github.com/visiblemem/Hermes-maces/issues/9). Until that runtime state machine is merged, the current Public Beta uses the explicit `shadow_mode` configuration switch and must remain in Shadow Mode for at least seven days and until the local validation requirements in [`docs/PUBLIC_RELEASE_GUIDE.md`](docs/PUBLIC_RELEASE_GUIDE.md) are satisfied.
 
 Each profile has an independent MACES database and must be evaluated independently. No repository update, GitHub report, Tag, or maintainer action should be required for an installed profile's eventual local activation.
 
@@ -133,12 +136,17 @@ Each profile has an independent MACES database and must be evaluated independent
 - Verified Hermes host baseline: `hermes-agent==0.18.2`.
 - CI covers Python 3.11, 3.12, and 3.13 on Ubuntu and macOS.
 - The blocking real-PluginManager E2E is pinned to Hermes Agent 0.18.2 and Python 3.11.
-- `hermes plugins install owner/repo` shallow-clones the repository's default branch. It does not pin a GitHub Release tag.
+- Hermes currently uses `hermes plugins install owner/repo` as the distribution and registration path for external subsystems.
+- That command shallow-clones the repository's default branch and does not pin a GitHub Release tag.
 - `main` is therefore the version users install and must contain only reviewed, CI-green commits.
 
 Windows and Hermes versions outside the listed baseline are not yet part of the verified compatibility matrix.
 
-## Install one profile at a time
+## Distribution and installation on Hermes
+
+MACES is architecturally a subconscious subsystem. The command below uses the current Hermes plugin infrastructure only as its **distribution, registration, enablement, and lifecycle hook mechanism**. It does not redefine MACES as a conventional optional plugin.
+
+Hermes does not yet expose a dedicated subconscious-subsystem installer, so the existing CLI is the only supported installation path. Do not substitute an invented command such as `hermes install subconscious`.
 
 1. Select one profile and install without enabling:
 
@@ -151,7 +159,7 @@ Windows and Hermes versions outside the listed baseline are not yet part of the 
 3. Copy the safe defaults from [`config.example.yaml`](config.example.yaml) into that profile's config.
 4. Keep `shadow_mode: true` and `learnable_tool_fields: {}` until fields have been reviewed.
 5. Add only reviewed retrieval tools and query-like string fields when a meaningful Shadow evaluation is required.
-6. Enable the plugin and restart the gateway:
+6. Enable the installed MACES subsystem through the current Hermes extension registry and restart the gateway:
 
    ```bash
    hermes plugins enable hermes-maces --no-allow-tool-override
@@ -170,7 +178,7 @@ MACES resolves the trusted profile through `ctx.profile_name` and `hermes_consta
 <active-profile-HERMES_HOME>/data/maces/subconscious.db
 ```
 
-The plugin checkout must not contain a live database. On first registration, a legacy checkout database is moved into the active profile data directory and recorded as a `migration` audit event.
+The installed repository checkout must not contain a live database. On first registration, a legacy checkout database is moved into the active profile data directory and recorded as a `migration` audit event.
 
 ## Safe default configuration
 
@@ -203,7 +211,9 @@ plugins:
           - 那個
 ```
 
-All numeric values are bounded. Invalid settings force MACES into Shadow Mode and log a warning; they do not prevent Hermes from starting. The repository contains no user `config.yaml`, so plugin updates cannot overwrite profile behavior settings.
+The `plugins` keys above reflect the current Hermes extension registry schema. They describe how Hermes loads MACES; they do not define MACES's architectural role.
+
+All numeric values are bounded. Invalid settings force MACES into Shadow Mode and log a warning; they do not prevent Hermes from starting. The repository contains no user `config.yaml`, so updates cannot overwrite profile behavior settings.
 
 ### Reviewed tool-learning allowlist
 
@@ -265,6 +275,7 @@ Report suspected credential retention, profile-boundary violations, path disclos
 - Strict learning gates may produce little data; this is expected behavior.
 - Traditional Chinese segmentation uses bounded rules and is not full semantic understanding.
 - Automatic per-profile Shadow activation is not yet implemented; see [Issue #9](https://github.com/visiblemem/Hermes-maces/issues/9).
+- Hermes currently exposes MACES through its plugin distribution and extension registry because no dedicated subconscious-subsystem loader exists yet.
 - Only the listed Hermes, Python, and operating-system combinations are verified.
 - Unsafe user-added allowlist fields can expand privacy risk.
 - MACES provides no cloud sync, cross-device synchronization, or remote backup.
@@ -272,7 +283,7 @@ Report suspected credential retention, profile-boundary violations, path disclos
 
 ## Disable, remove, and clear data
 
-Disable first:
+Disable MACES through the current Hermes extension registry:
 
 ```bash
 hermes plugins disable hermes-maces
@@ -281,7 +292,7 @@ hermes gateway restart
 
 Confirm ordinary Hermes behavior, Hindsight recall, Canon files, Session SQLite, and profile memory remain normal. Preserve the MACES database for local investigation.
 
-Remove the plugin only after that verification:
+Remove the installed MACES package only after that verification:
 
 ```bash
 hermes plugins remove hermes-maces
@@ -297,7 +308,7 @@ Never delete Hindsight data, Obsidian, Hermes Session SQLite, `USER.md`, `MEMORY
 
 ## Integration with Hermes and other agents
 
-MACES is currently built on top of the **Hermes Agent** runtime and uses its lifecycle hooks, trusted profile isolation, plugin architecture, and local configuration model.
+MACES is currently built on top of the **Hermes Agent** runtime and uses its lifecycle hooks, trusted profile isolation, extension infrastructure, and local configuration model. Hermes's plugin registry is the current loading mechanism; it is not the conceptual boundary of MACES.
 
 The subconscious learning mechanism itself is conceptually framework-agnostic, but it should not be installed blindly into another AI agent. Before integration, the target agent must understand—or be analyzed by an AI agent that understands—its execution lifecycle, memory hierarchy, trust boundaries, tool hooks, profile model, and extension mechanisms. MACES must then be adapted to that host architecture so that subconscious influence remains bounded and does not interfere with explicit memory, canonical knowledge, system instructions, or security policy.
 
