@@ -9,10 +9,10 @@ description = "Profile-bound subconscious advisory layer for Hermes Agent"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
-dependencies = []
+dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.5", "pyyaml>=6.0"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
