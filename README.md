@@ -101,7 +101,7 @@ MACES should begin in **Shadow Mode**:
 
 During Shadow Mode, MACES can learn privacy-safe signals and build profile-local associations, but it injects no advisory context into model inference.
 
-The intended lifecycle is a per-profile local Shadow period followed by activation. Automatic, persistent per-profile activation is tracked in [Issue #9](https://github.com/jefferyzkj01/Hermes-maces/issues/9). Until that runtime state machine is merged, the current Public Beta uses the explicit `shadow_mode` configuration switch and should remain in Shadow Mode until locally reviewed.
+The intended lifecycle is a per-profile local Shadow period followed by activation. Automatic, persistent per-profile activation is tracked in [Issue #9](https://github.com/visiblemem/Hermes-maces/issues/9). Until that runtime state machine is merged, the current Public Beta uses the explicit `shadow_mode` configuration switch and should remain in Shadow Mode until locally reviewed.
 
 Each profile has an independent MACES database and must be evaluated independently. No repository update, GitHub report, Tag, or maintainer action should be required for an installed profile's eventual local activation.
 
@@ -144,7 +144,7 @@ Windows and Hermes versions outside the listed baseline are not yet part of the 
 
    ```bash
    hermes profile use default
-   hermes plugins install jefferyzkj01/Hermes-maces --no-enable
+   hermes plugins install visiblemem/Hermes-maces --no-enable
    ```
 
 2. Back up the active profile's Hermes `config.yaml`.
@@ -264,7 +264,7 @@ Report suspected credential retention, profile-boundary violations, path disclos
 - Patterns are speculative advisory signals, not facts.
 - Strict learning gates may produce little data; this is expected behavior.
 - Traditional Chinese segmentation uses bounded rules and is not full semantic understanding.
-- Automatic per-profile Shadow activation is not yet implemented; see [Issue #9](https://github.com/jefferyzkj01/Hermes-maces/issues/9).
+- Automatic per-profile Shadow activation is not yet implemented; see [Issue #9](https://github.com/visiblemem/Hermes-maces/issues/9).
 - Only the listed Hermes, Python, and operating-system combinations are verified.
 - Unsafe user-added allowlist fields can expand privacy risk.
 - MACES provides no cloud sync, cross-device synchronization, or remote backup.
