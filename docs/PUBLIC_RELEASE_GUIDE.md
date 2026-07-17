@@ -117,7 +117,7 @@ Run Shadow on one test profile only:
 
 ```bash
 hermes profile use default
-hermes plugins install jefferyzkj01/Hermes-maces --no-enable
+hermes plugins install visiblemem/Hermes-maces --no-enable
 hermes plugins enable hermes-maces --no-allow-tool-override
 hermes gateway restart
 ```
@@ -177,85 +177,3 @@ Bearer test-token-not-a-real-secret-123456789
 fake.person@example.invalid
 /Users/person/private.txt
 ```
-
-Scan `subconscious.db`, `subconscious.db-wal`, and `subconscious.db-shm`, then delete only the temporary profile.
-
-## Phase 4 — Release preparation
-
-The following must agree:
-
-- `plugin.yaml` version;
-- `pyproject.toml` project version;
-- latest `CHANGELOG.md` section;
-- Git tag;
-- GitHub Release title.
-
-Release notes must include Public Beta status, verified compatibility, Shadow-first installation, safety boundaries, data location, cleanup, known limitations, rollback, validation-report link, and the final release commit SHA.
-
-### Repository settings gate
-
-Before release, configure `main` to require:
-
-- changes through Pull Requests;
-- passing `MACES Core` checks;
-- at least one reviewer approval;
-- no force pushes;
-- secret scanning and push protection.
-
-These settings and GitHub Private Vulnerability Reporting are repository-admin operations and must be verified manually.
-
-### Release stop conditions
-
-Do not create `v1.2.0` Tag or GitHub Release when any of these is true:
-
-- working tree is dirty;
-- CI is not green;
-- Shadow verdict is not PASS;
-- versions are inconsistent;
-- Tag target is wrong;
-- branch protection or private security reporting is unverified.
-
-## Phase 5 — Public Beta operations
-
-Public installation instructions must always use this order:
-
-1. confirm compatible Hermes version;
-2. select one profile;
-3. install with `--no-enable`;
-4. back up profile config;
-5. set `shadow_mode: true`;
-6. add only two or three safe retrieval fields;
-7. enable and restart gateway;
-8. verify the unique database location;
-9. run at least seven days of Shadow;
-10. enable bounded influence only after manual review.
-
-README and release notes must state that patterns are speculative, strict gates may produce little data, Traditional Chinese extraction is bounded rather than semantic, each profile requires separate validation, unsafe allowlists expand privacy risk, `main` is the install source, and no cloud sync or remote backup is provided.
-
-## Rollback
-
-```bash
-hermes plugins disable hermes-maces
-hermes gateway restart
-```
-
-After confirming Hermes, Hindsight, Obsidian, Session SQLite, and profile memory are normal, preserve the MACES database for local investigation. Delete only `<profile-HERMES_HOME>/data/maces/`, and only while the gateway is stopped and the profile path is confirmed.
-
-## Final release checklist
-
-- [x] `.gitignore` blocks caches, DB, WAL, SHM, build output, and local data.
-- [x] README states Public Beta, Shadow-first, and non-Canon positioning.
-- [ ] GitHub Private Vulnerability Reporting is enabled and verified.
-- [ ] Ubuntu/macOS × Python 3.11/3.12/3.13 CI passes on the release PR.
-- [ ] Hermes Agent 0.18.2 PluginManager E2E passes on the release PR.
-- [ ] Ruff, compile, unit/security, E2E, boundary contract, and package build pass.
-- [ ] Real Shadow reaches minimum evidence.
-- [ ] `docs/PUBLIC_BETA_VALIDATION.md` verdict is PASS.
-- [ ] Sensitive retention, cross-profile writes, Canon mutations, and negation errors are all zero.
-- [ ] Disable and rollback are verified in a real profile.
-- [ ] Version, Tag, Release title, Changelog, and commit SHA agree.
-- [x] Draft release notes contain no private content.
-- [ ] `main` branch protection is enabled and verified.
-- [ ] `v1.2.0` Tag and GitHub Release are created only after all gates pass.
-
-A stable label requires broader multi-user, multi-platform, and longer-duration validation beyond this Public Beta gate.
