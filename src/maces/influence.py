@@ -5,6 +5,7 @@ from hashlib import sha256
 from .models import InfluenceSignal
 from .policy import MacesPolicy
 from .store import CognitiveStore
+from .validation import is_valid_pattern_label
 
 
 def _key(value: str) -> str:
@@ -22,9 +23,12 @@ class InfluenceEngine:
         gaps = self.store.list_table("gaps")
         wanted = {_key(c): c.strip().lower() for c in concepts if c.strip()}
 
-        relevant = [r for r in patterns if r["pattern_key"] in wanted]
+        # Validate persisted labels again at the output boundary so hostile legacy
+        # rows can never be rendered into an LLM prompt.
+        safe_patterns = [r for r in patterns if is_valid_pattern_label(str(r["label"]))]
+        relevant = [r for r in safe_patterns if r["pattern_key"] in wanted]
         if not relevant:
-            relevant = sorted(patterns, key=lambda r: float(r["weight"]), reverse=True)[:2]
+            relevant = sorted(safe_patterns, key=lambda r: float(r["weight"]), reverse=True)[:2]
 
         attention_candidates = [
             (str(r["label"]), float(r["weight"]))
@@ -32,14 +36,23 @@ class InfluenceEngine:
             if float(r["weight"]) >= self.policy.minimum_influence_weight
         ]
 
-        labels = {r["pattern_key"]: r["label"] for r in patterns}
-        connected = [r for r in edges if r["key_a"] in wanted or r["key_b"] in wanted]
+        # Edges only expand from nodes that already carry enough node weight.
+        # Mention-only edges cannot promote a zero-weight node into attention.
+        weighted_keys = {
+            r["pattern_key"]
+            for r in safe_patterns
+            if float(r["weight"]) >= self.policy.minimum_influence_weight
+        }
+        labels = {r["pattern_key"]: r["label"] for r in safe_patterns}
+        connected = [
+            r
+            for r in edges
+            if (r["key_a"] in wanted or r["key_b"] in wanted)
+            and r["key_a"] in weighted_keys
+            and r["key_b"] in weighted_keys
+        ]
         association_candidates = [
-            (
-                str(labels.get(r["key_a"], r["key_a"])),
-                str(labels.get(r["key_b"], r["key_b"])),
-                float(r["weight"]),
-            )
+            (str(labels[r["key_a"]]), str(labels[r["key_b"]]), float(r["weight"]))
             for r in sorted(connected, key=lambda r: float(r["weight"]), reverse=True)
             if float(r["weight"]) >= self.policy.minimum_influence_weight
         ]
@@ -59,12 +72,6 @@ class InfluenceEngine:
             verify,
             sum(values) / len(values) if values else 0.0,
         )
-
-        # The renderer only sees weighted labels, edge labels, and gap topics. It never
-        # queries staged_artifacts, so autonomous research text cannot enter prompts.
-        # Remove lowest-priority items until the final rendered block satisfies the
-        # hard character budget. If one pathological item is itself too long, the
-        # signal is suppressed rather than leaking an oversized context block.
         while signal.render() and len(signal.render()) > self.policy.influence_max_chars:
             if signal.verify:
                 signal.verify.pop()
