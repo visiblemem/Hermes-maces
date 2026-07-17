@@ -10,7 +10,11 @@
 - Centralize all persistence scrubbing, cap enforcement, orphan-edge cleanup, lock retry, and daily decay.
 - Add aggregate status/top commands without model-tool exposure.
 - Replace the layout-only check with unit-security and real PluginManager E2E jobs.
-- Align installation, rollout, privacy, journal, migration, and rollback documentation.
+- Add Ubuntu/macOS compatibility testing for Python 3.11–3.13.
+- Add package build and Twine metadata verification.
+- Add a cross-platform public repository boundary contract and `.gitignore` hygiene.
+- Publish Shadow-first Public Beta documentation, private vulnerability reporting guidance, a de-identified validation template, and draft release notes.
+- Keep the formal `v1.2.0` Tag and GitHub Release blocked until real Shadow validation is PASS and repository protection settings are verified.
 
 ## 1.1.0
 
