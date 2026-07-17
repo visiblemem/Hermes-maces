@@ -38,9 +38,9 @@ Windows and Hermes versions other than the listed baseline are not yet part of t
    ```
 
 2. Back up the active profile's Hermes `config.yaml`.
-3. Copy the relevant section from [`config.example.yaml`](config.example.yaml) into that profile's config.
-4. Keep `shadow_mode: true`.
-5. Add only two or three reviewed retrieval tools and safe query-like string fields.
+3. Copy the safe defaults from [`config.example.yaml`](config.example.yaml) into that profile's config.
+4. Keep `shadow_mode: true` and `learnable_tool_fields: {}` until fields have been reviewed.
+5. Add only two or three reviewed retrieval tools and safe query-like string fields for a meaningful Shadow evaluation.
 6. Enable the plugin and restart the gateway:
 
    ```bash
@@ -64,7 +64,7 @@ MACES resolves the active profile through trusted `ctx.profile_name` and `hermes
 
 The plugin checkout must not contain a live database. On first registration, a legacy checkout database is moved into the active profile data directory and the transition is recorded as a `migration` audit event.
 
-## Configuration
+## Safe default configuration
 
 ```yaml
 plugins:
@@ -77,11 +77,7 @@ plugins:
         max_items: 4
         max_chars: 700
         minimum_weight: 0.10
-      learnable_tool_fields:
-        session_search:
-          - query
-        web_search:
-          - query
+      learnable_tool_fields: {}
       limits:
         max_patterns: 5000
         max_edges: 20000
@@ -101,6 +97,20 @@ plugins:
 
 All numeric values are bounded. Invalid settings force MACES into shadow mode and log a warning; they do not prevent Hermes from starting. The repository does not contain a user `config.yaml`, so plugin updates cannot overwrite profile behavior settings.
 
+### Reviewed Shadow allowlist example
+
+After reviewing the tools and confirming that only query-like strings are exposed, a single-profile Shadow test may explicitly add:
+
+```yaml
+learnable_tool_fields:
+  session_search:
+    - query
+  web_search:
+    - query
+```
+
+This is not the default. Do not allowlist write tools, file contents, credentials, paths, complete result bodies, or arbitrary unreviewed fields.
+
 ### Tool-learning gate
 
 A tool call can reinforce concepts only when all of the following are true:
@@ -111,7 +121,7 @@ error_type is None
 tool_name is present in learnable_tool_fields
 ```
 
-Only explicitly listed safe string fields are read. Full arguments and result bodies are never persisted. Failed, cancelled, approval-denied, unlisted, or status-ambiguous calls do not create a positive signal. Do not allowlist write tools, file contents, credentials, paths, or complete result bodies.
+Only explicitly listed safe string fields are read. Full arguments and result bodies are never persisted. Failed, cancelled, approval-denied, unlisted, or status-ambiguous calls do not create a positive signal.
 
 ### Traditional Chinese learning
 
