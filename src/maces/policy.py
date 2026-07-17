@@ -4,17 +4,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 _DEFAULT_ZH_STOPWORDS = (
-    "我",
-    "你",
-    "他",
-    "她",
-    "它",
-    "請",
-    "想要",
-    "喜歡",
-    "偏好",
-    "使用",
-    "關於",
     "我們",
     "你們",
     "他們",
