@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import shutil
+import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import yaml
 
 from .engine import MacesEngine
 from .models import CognitiveEvent
@@ -15,73 +20,34 @@ from .validation import is_valid_pattern_label, reject_sensitive_candidate, sani
 
 log = logging.getLogger("hermes-maces")
 _PLUGIN_ROOT = Path(__file__).resolve().parents[2]
-_POLICY = MacesPolicy()
-_ENGINES: dict[str, MacesEngine] = {}
-_PENDING: dict[str, tuple[str, list[str]]] = {}
-_WARNED_DEFAULT_PROFILE = False
 
 
-def _context_value(kwargs: dict[str, Any], name: str) -> Any:
-    if kwargs.get(name) not in (None, ""):
-        return kwargs[name]
-    for container_name in ("context", "hook_context", "runtime_context"):
-        container = kwargs.get(container_name)
-        if isinstance(container, dict) and container.get(name) not in (None, ""):
-            return container[name]
-        value = getattr(container, name, None)
-        if value not in (None, ""):
-            return value
-    return None
-
-
-def _profile_id(kwargs: dict[str, Any]) -> str:
-    global _WARNED_DEFAULT_PROFILE
-    raw = None
-    for name in ("profile_id", "group_id", "profile"):
-        raw = _context_value(kwargs, name)
-        if raw not in (None, ""):
-            break
-    if raw in (None, ""):
-        if not _WARNED_DEFAULT_PROFILE:
-            log.warning("MACES hook context has no profile identifier; using isolated 'default' store")
-            _WARNED_DEFAULT_PROFILE = True
-        return "default"
-    return sanitize_profile_id(raw)
-
-
-def _migrate_legacy_database(data: Path, profile_id: str) -> None:
-    legacy = data / "subconscious.db"
-    destination = data / "default" / "subconscious.db"
-    if profile_id != "default" or not legacy.exists() or destination.exists():
-        return
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(legacy), str(destination))
-    store = CognitiveStore(destination)
-    store.journal("store.migrated", "default", {"from": "legacy", "to": "default"})
-
-
-def _engine(profile_id: str) -> MacesEngine:
-    existing = _ENGINES.get(profile_id)
-    if existing is not None:
-        return existing
-    data = (_PLUGIN_ROOT / "data").resolve()
-    data.mkdir(parents=True, exist_ok=True)
-    _migrate_legacy_database(data, profile_id)
-    profile_dir = (data / profile_id).resolve()
-    if data not in profile_dir.parents:
-        raise ValueError("profile database path escaped plugin data directory")
-    profile_dir.mkdir(parents=True, exist_ok=True)
-    engine = MacesEngine(CognitiveStore(profile_dir / "subconscious.db"), _POLICY)
-    _ENGINES[profile_id] = engine
-    return engine
+def _load_config() -> tuple[MacesPolicy, bool]:
+    path = _PLUGIN_ROOT / "config.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+    data = data if isinstance(data, dict) else {}
+    influence = data.get("influence", {}) if isinstance(data.get("influence", {}), dict) else {}
+    raw_fields = data.get("learnable_tool_fields", {})
+    fields = {
+        str(tool): tuple(str(field) for field in values if isinstance(field, str))
+        for tool, values in raw_fields.items()
+        if isinstance(values, list)
+    } if isinstance(raw_fields, dict) else {}
+    policy = MacesPolicy(
+        influence_max_items=int(influence.get("max_items", 4)),
+        influence_max_chars=int(influence.get("max_chars", 700)),
+        minimum_influence_weight=float(influence.get("minimum_weight", 0.10)),
+        learnable_tool_fields=fields,
+    )
+    rollout = data.get("rollout", {}) if isinstance(data.get("rollout", {}), dict) else {}
+    return policy, bool(rollout.get("shadow_mode", False))
 
 
 def _extract_concepts(text: str, limit: int = 8) -> tuple[list[str], int]:
     scrubbed_text, scrubbed = scrub_text(text)
     latin = re.findall(r"[A-Za-z0-9][A-Za-z0-9-]{3,31}", scrubbed_text.lower())
-    cjk = re.findall(r"[\u3400-\u9fff]{2,8}", scrubbed_text)
     concepts: list[str] = []
-    for candidate in latin + cjk:
+    for candidate in latin:
         if reject_sensitive_candidate(candidate) or not is_valid_pattern_label(candidate):
             scrubbed += 1
             continue
@@ -96,141 +62,169 @@ def _concepts(text: str, limit: int = 8) -> list[str]:
     return _extract_concepts(text, limit)[0]
 
 
-def _learnable_tool_text(tool_name: str, args: dict[str, Any]) -> str:
-    fields = _POLICY.learnable_fields_for(tool_name)
-    values = [args.get(field) for field in fields]
-    return " ".join(value for value in values if isinstance(value, str))
+def _trusted_profile_name(ctx: Any) -> str:
+    raw = getattr(ctx, "profile_name", None)
+    if raw in (None, ""):
+        raise RuntimeError("Hermes MACES requires ctx.profile_name; no shared default profile is allowed")
+    return sanitize_profile_id(raw)
 
 
-def _assert_session_profile(session_id: str, profile_id: str) -> list[str] | None:
-    pending = _PENDING.pop(session_id, None)
-    if pending is None:
-        return None
-    pending_profile, concepts = pending
-    if pending_profile != profile_id:
-        raise RuntimeError(
-            f"MACES profile mismatch for session {session_id!r}: "
-            f"{pending_profile!r} != {profile_id!r}"
+def _profile_data_dir(ctx: Any, profile_name: str) -> Path:
+    explicit = getattr(ctx, "plugin_data_dir", None)
+    if explicit:
+        root = Path(explicit).expanduser().resolve()
+    else:
+        hermes_home = getattr(ctx, "hermes_home", None) or os.environ.get("HERMES_HOME")
+        root = (
+            Path(hermes_home).expanduser().resolve() / "plugins" / "hermes-maces"
+            if hermes_home
+            else (_PLUGIN_ROOT / "data").resolve()
         )
-    return concepts
+    profile_dir = (root / profile_name).resolve()
+    if root != profile_dir and root not in profile_dir.parents:
+        raise ValueError("profile database path escaped the MACES data directory")
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    return profile_dir
 
 
-def pre_llm_call(user_message: str, session_id: str = "", **kwargs: Any):
-    profile_id = _profile_id(kwargs)
-    concepts, scrubbed = _extract_concepts(user_message)
-    _PENDING[session_id] = (profile_id, concepts)
-    if scrubbed:
-        _engine(profile_id).store.journal(
-            "candidates.scrubbed", None, {"scrubbed_candidates": scrubbed}
-        )
-    rendered = _engine(profile_id).influence(concepts).render()
-    return {"context": rendered} if rendered else None
-
-
-def post_llm_call(
-    session_id: str, user_message: str, assistant_response: str, **kwargs: Any
-):
-    profile_id = _profile_id(kwargs)
-    concepts = _assert_session_profile(session_id, profile_id)
-    if concepts is None:
-        concepts, scrubbed = _extract_concepts(user_message)
-        if scrubbed:
-            _engine(profile_id).store.journal(
-                "candidates.scrubbed", None, {"scrubbed_candidates": scrubbed}
-            )
-    _engine(profile_id).observe(
-        CognitiveEvent(
-            kind="task.completed",
-            source="hermes-runtime",
-            subject=" ".join(concepts[:3]) or None,
-            payload={"concepts": concepts, "operator_driven": True},
-        )
-    )
-    log.debug("absorbed completed turn (%d chars)", len(assistant_response or ""))
-
-
-def post_tool_call(tool_name: str, args: dict, result: str, **kwargs: Any):
-    profile_id = _profile_id(kwargs)
-    concepts, scrubbed = _extract_concepts(_learnable_tool_text(tool_name, args))
-    engine = _engine(profile_id)
-    if scrubbed:
-        engine.store.journal(
-            "candidates.scrubbed", None, {"scrubbed_candidates": scrubbed}
-        )
-    if not concepts:
+def _migrate_legacy_database(profile_dir: Path, profile_name: str) -> None:
+    legacy = (_PLUGIN_ROOT / "data" / "subconscious.db").resolve()
+    destination = profile_dir / "subconscious.db"
+    if not legacy.exists() or destination.exists():
         return
-    engine.observe(
-        CognitiveEvent(
-            kind="retrieval.used",
-            source="hermes-tool",
-            subject=tool_name,
-            payload={
-                "concepts": concepts,
-                "operator_driven": True,
-                "result_size": len(result or ""),
-            },
+    shutil.move(str(legacy), str(destination))
+    store = CognitiveStore(destination)
+    store.journal("store.migrated", profile_name, {"from": "legacy-single-store"})
+
+
+@dataclass(slots=True)
+class ProfileRuntime:
+    profile_name: str
+    engine: MacesEngine
+    policy: MacesPolicy
+    shadow_mode: bool = False
+    pending: dict[tuple[str, str, str], list[str]] = field(default_factory=dict)
+    lock: threading.RLock = field(default_factory=threading.RLock)
+
+    def _turn_key(self, session_id: str, kwargs: dict[str, Any]) -> tuple[str, str, str]:
+        turn_id = str(kwargs.get("turn_id") or kwargs.get("request_id") or session_id or "turn")
+        return self.profile_name, str(session_id or "session"), turn_id
+
+    def _journal_scrubbed(self, count: int) -> None:
+        if count:
+            self.engine.store.journal(
+                "candidates.scrubbed", None, {"scrubbed_candidates": int(count)}
+            )
+
+    def pre_llm_call(self, user_message: str, session_id: str = "", **kwargs: Any):
+        key = self._turn_key(session_id, kwargs)
+        concepts, scrubbed = _extract_concepts(user_message)
+        with self.lock:
+            self.pending[key] = concepts
+        self._journal_scrubbed(scrubbed)
+        if self.shadow_mode:
+            return None
+        try:
+            rendered = self.engine.influence(concepts).render()
+            return {"context": rendered} if rendered else None
+        except Exception:
+            log.exception("MACES influence failed; continuing without advisory context")
+            return None
+
+    def post_llm_call(
+        self, session_id: str, user_message: str, assistant_response: str, **kwargs: Any
+    ):
+        key = self._turn_key(session_id, kwargs)
+        try:
+            with self.lock:
+                concepts = self.pending.pop(key, None)
+            if concepts is None:
+                concepts, scrubbed = _extract_concepts(user_message)
+                self._journal_scrubbed(scrubbed)
+            self.engine.observe(
+                CognitiveEvent(
+                    kind="task.completed",
+                    source="hermes-runtime",
+                    subject=" ".join(concepts[:3]) or None,
+                    payload={"concepts": concepts, "operator_driven": True},
+                )
+            )
+        except Exception:
+            log.exception("MACES turn absorption failed; Hermes response is unaffected")
+        finally:
+            with self.lock:
+                self.pending.pop(key, None)
+        log.debug("absorbed completed turn (%d chars)", len(assistant_response or ""))
+
+    def post_tool_call(self, tool_name: str, args: dict, result: str, **kwargs: Any):
+        try:
+            fields = self.policy.learnable_fields_for(tool_name)
+            if not fields or kwargs.get("success") is False:
+                return
+            values = [args.get(field) for field in fields]
+            text = " ".join(value for value in values if isinstance(value, str))
+            concepts, scrubbed = _extract_concepts(text)
+            self._journal_scrubbed(scrubbed)
+            if concepts:
+                self.engine.observe(
+                    CognitiveEvent(
+                        kind="retrieval.used",
+                        source="hermes-tool",
+                        subject=tool_name,
+                        payload={"concepts": concepts, "operator_driven": True,
+                                 "result_size": len(result or "")},
+                    )
+                )
+        except Exception:
+            log.exception("MACES tool absorption failed; tool result is unaffected")
+
+    def on_session_end(self, session_id: str = "", **kwargs: Any):
+        try:
+            with self.lock:
+                prefix = (self.profile_name, str(session_id or "session"))
+                for key in [key for key in self.pending if key[:2] == prefix]:
+                    self.pending.pop(key, None)
+            self.engine.consolidate()
+        except Exception:
+            log.exception("MACES session cleanup failed; Hermes lifecycle is unaffected")
+
+    def explicit_feedback(self, params: dict, **kwargs: Any) -> str:
+        verdict = str(params.get("verdict", "")).strip().lower()
+        if verdict not in {"confirmed", "corrected"}:
+            return json.dumps({"success": False, "error": "invalid verdict"})
+        concepts: list[str] = []
+        scrubbed = 0
+        for raw in params.get("concepts", []):
+            extracted, count = _extract_concepts(str(raw), limit=16)
+            concepts.extend(extracted)
+            scrubbed += count
+        concepts = list(dict.fromkeys(concepts))[:16]
+        self._journal_scrubbed(scrubbed)
+        output = self.engine.observe(
+            CognitiveEvent(
+                kind=f"answer.{verdict}",
+                source="trusted-operator-feedback",
+                payload={"concepts": concepts, "operator_driven": True},
+            )
         )
-    )
-
-
-def on_session_end(session_id: str = "", **kwargs: Any):
-    profile_id = _profile_id(kwargs)
-    pending = _PENDING.get(session_id)
-    if pending is not None and pending[0] != profile_id:
-        raise RuntimeError("MACES session ended under a different profile")
-    _PENDING.pop(session_id, None)
-    _engine(profile_id).consolidate()
-
-
-def feedback_tool(params: dict, **kwargs: Any) -> str:
-    profile_id = _profile_id({**kwargs, **params})
-    verdict = str(params.get("verdict", "")).strip().lower()
-    raw_concepts = [str(x) for x in params.get("concepts", [])]
-    concepts: list[str] = []
-    scrubbed = 0
-    for raw in raw_concepts:
-        extracted, count = _extract_concepts(raw, limit=16)
-        concepts.extend(extracted)
-        scrubbed += count
-    concepts = list(dict.fromkeys(concepts))[:16]
-    if verdict not in {"confirmed", "corrected"}:
-        return json.dumps({"success": False, "error": "verdict must be confirmed or corrected"})
-    engine = _engine(profile_id)
-    if scrubbed:
-        engine.store.journal(
-            "candidates.scrubbed", None, {"scrubbed_candidates": scrubbed}
-        )
-    output = engine.observe(
-        CognitiveEvent(
-            kind=f"answer.{verdict}",
-            source="operator-feedback",
-            payload={"concepts": concepts, "operator_driven": True},
-        )
-    )
-    return json.dumps({"success": True, **output})
+        return json.dumps({"success": True, **output})
 
 
 def register(ctx):
-    ctx.register_hook("pre_llm_call", pre_llm_call)
-    ctx.register_hook("post_llm_call", post_llm_call)
-    ctx.register_hook("post_tool_call", post_tool_call)
-    ctx.register_hook("on_session_end", on_session_end)
-    ctx.register_tool(
-        name="maces_feedback",
-        toolset="maces",
-        description="Record explicit operator confirmation or correction for subconscious concepts.",
-        schema={
-            "name": "maces_feedback",
-            "description": "Record explicit confirmed/corrected operator feedback for concepts.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "verdict": {"type": "string", "enum": ["confirmed", "corrected"]},
-                    "concepts": {"type": "array", "items": {"type": "string"}},
-                    "profile_id": {"type": "string"},
-                },
-                "required": ["verdict", "concepts"],
-            },
-        },
-        handler=feedback_tool,
+    profile_name = _trusted_profile_name(ctx)
+    profile_dir = _profile_data_dir(ctx, profile_name)
+    _migrate_legacy_database(profile_dir, profile_name)
+    policy, shadow_mode = _load_config()
+    runtime = ProfileRuntime(
+        profile_name=profile_name,
+        engine=MacesEngine(CognitiveStore(profile_dir / "subconscious.db"), policy),
+        policy=policy,
+        shadow_mode=shadow_mode,
     )
+    ctx.register_hook("pre_llm_call", runtime.pre_llm_call)
+    ctx.register_hook("post_llm_call", runtime.post_llm_call)
+    ctx.register_hook("post_tool_call", runtime.post_tool_call)
+    ctx.register_hook("on_session_end", runtime.on_session_end)
+    if hasattr(ctx, "register_command"):
+        ctx.register_command("maces-feedback", runtime.explicit_feedback)
+    return runtime

@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-maces"
-version = "1.0.0"
-description = "Subconscious layer plugin for Hermes Agent"
+version = "1.1.0"
+description = "Profile-bound subconscious advisory layer for Hermes Agent"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+license = {text = "MIT"}
+dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.5", "pyyaml>=6.0"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
