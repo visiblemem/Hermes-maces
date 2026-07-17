@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from .engine import MacesEngine
 from .models import CognitiveEvent
 from .policy import MacesPolicy
@@ -18,6 +20,27 @@ from .validation import is_valid_pattern_label, reject_sensitive_candidate, sani
 
 log = logging.getLogger("hermes-maces")
 _PLUGIN_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _load_config() -> tuple[MacesPolicy, bool]:
+    path = _PLUGIN_ROOT / "config.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
+    data = data if isinstance(data, dict) else {}
+    influence = data.get("influence", {}) if isinstance(data.get("influence", {}), dict) else {}
+    raw_fields = data.get("learnable_tool_fields", {})
+    fields = {
+        str(tool): tuple(str(field) for field in values if isinstance(field, str))
+        for tool, values in raw_fields.items()
+        if isinstance(values, list)
+    } if isinstance(raw_fields, dict) else {}
+    policy = MacesPolicy(
+        influence_max_items=int(influence.get("max_items", 4)),
+        influence_max_chars=int(influence.get("max_chars", 700)),
+        minimum_influence_weight=float(influence.get("minimum_weight", 0.10)),
+        learnable_tool_fields=fields,
+    )
+    rollout = data.get("rollout", {}) if isinstance(data.get("rollout", {}), dict) else {}
+    return policy, bool(rollout.get("shadow_mode", False))
 
 
 def _extract_concepts(text: str, limit: int = 8) -> tuple[list[str], int]:
@@ -52,10 +75,11 @@ def _profile_data_dir(ctx: Any, profile_name: str) -> Path:
         root = Path(explicit).expanduser().resolve()
     else:
         hermes_home = getattr(ctx, "hermes_home", None) or os.environ.get("HERMES_HOME")
-        if hermes_home:
-            root = (Path(hermes_home).expanduser().resolve() / "plugins" / "hermes-maces")
-        else:
-            root = (_PLUGIN_ROOT / "data").resolve()
+        root = (
+            Path(hermes_home).expanduser().resolve() / "plugins" / "hermes-maces"
+            if hermes_home
+            else (_PLUGIN_ROOT / "data").resolve()
+        )
     profile_dir = (root / profile_name).resolve()
     if root != profile_dir and root not in profile_dir.parents:
         raise ValueError("profile database path escaped the MACES data directory")
@@ -78,6 +102,7 @@ class ProfileRuntime:
     profile_name: str
     engine: MacesEngine
     policy: MacesPolicy
+    shadow_mode: bool = False
     pending: dict[tuple[str, str, str], list[str]] = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
 
@@ -97,6 +122,8 @@ class ProfileRuntime:
         with self.lock:
             self.pending[key] = concepts
         self._journal_scrubbed(scrubbed)
+        if self.shadow_mode:
+            return None
         try:
             rendered = self.engine.influence(concepts).render()
             return {"context": rendered} if rendered else None
@@ -138,20 +165,16 @@ class ProfileRuntime:
             text = " ".join(value for value in values if isinstance(value, str))
             concepts, scrubbed = _extract_concepts(text)
             self._journal_scrubbed(scrubbed)
-            if not concepts:
-                return
-            self.engine.observe(
-                CognitiveEvent(
-                    kind="retrieval.used",
-                    source="hermes-tool",
-                    subject=tool_name,
-                    payload={
-                        "concepts": concepts,
-                        "operator_driven": True,
-                        "result_size": len(result or ""),
-                    },
+            if concepts:
+                self.engine.observe(
+                    CognitiveEvent(
+                        kind="retrieval.used",
+                        source="hermes-tool",
+                        subject=tool_name,
+                        payload={"concepts": concepts, "operator_driven": True,
+                                 "result_size": len(result or "")},
+                    )
                 )
-            )
         except Exception:
             log.exception("MACES tool absorption failed; tool result is unaffected")
 
@@ -159,15 +182,13 @@ class ProfileRuntime:
         try:
             with self.lock:
                 prefix = (self.profile_name, str(session_id or "session"))
-                stale = [key for key in self.pending if key[:2] == prefix]
-                for key in stale:
+                for key in [key for key in self.pending if key[:2] == prefix]:
                     self.pending.pop(key, None)
             self.engine.consolidate()
         except Exception:
             log.exception("MACES session cleanup failed; Hermes lifecycle is unaffected")
 
     def explicit_feedback(self, params: dict, **kwargs: Any) -> str:
-        """Trusted command/PWA entrypoint. Never registered as an LLM tool."""
         verdict = str(params.get("verdict", "")).strip().lower()
         if verdict not in {"confirmed", "corrected"}:
             return json.dumps({"success": False, "error": "invalid verdict"})
@@ -193,11 +214,12 @@ def register(ctx):
     profile_name = _trusted_profile_name(ctx)
     profile_dir = _profile_data_dir(ctx, profile_name)
     _migrate_legacy_database(profile_dir, profile_name)
-    policy = MacesPolicy()
+    policy, shadow_mode = _load_config()
     runtime = ProfileRuntime(
         profile_name=profile_name,
         engine=MacesEngine(CognitiveStore(profile_dir / "subconscious.db"), policy),
         policy=policy,
+        shadow_mode=shadow_mode,
     )
     ctx.register_hook("pre_llm_call", runtime.pre_llm_call)
     ctx.register_hook("post_llm_call", runtime.post_llm_call)
