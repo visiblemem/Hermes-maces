@@ -3,8 +3,10 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -42,69 +44,73 @@ CREATE TABLE IF NOT EXISTS promotion_proposals(
 CREATE TABLE IF NOT EXISTS journal(
  seq INTEGER PRIMARY KEY AUTOINCREMENT, event_type TEXT NOT NULL,
  entity_id TEXT, payload_json TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_patterns_weight ON patterns(weight DESC);
+CREATE INDEX IF NOT EXISTS idx_edges_a_weight ON edges(key_a,weight DESC);
+CREATE INDEX IF NOT EXISTS idx_edges_b_weight ON edges(key_b,weight DESC);
+CREATE INDEX IF NOT EXISTS idx_gaps_status_priority ON gaps(status,priority DESC);
 """
 
 
 class CognitiveStore:
     def __init__(self, path: str | Path) -> None:
         self.path = str(path)
+        self._lock = threading.RLock()
         with self.connect() as db:
             db.executescript(SCHEMA)
             self._migrate_learning_proposals(db)
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        db = sqlite3.connect(self.path)
-        db.row_factory = sqlite3.Row
-        try:
-            yield db
-            db.commit()
-        finally:
-            db.close()
+        last_error: sqlite3.OperationalError | None = None
+        for attempt in range(3):
+            try:
+                with self._lock:
+                    db = sqlite3.connect(self.path, timeout=5.0)
+                    db.row_factory = sqlite3.Row
+                    db.execute("PRAGMA busy_timeout=5000")
+                    try:
+                        yield db
+                        db.commit()
+                    except Exception:
+                        db.rollback()
+                        raise
+                    finally:
+                        db.close()
+                return
+            except sqlite3.OperationalError as exc:
+                last_error = exc
+                if "locked" not in str(exc).lower() or attempt == 2:
+                    raise
+                time.sleep(0.05 * (attempt + 1))
+        if last_error:
+            raise last_error
 
     def _migrate_learning_proposals(self, db: sqlite3.Connection) -> None:
-        """Collapse legacy active duplicates before enforcing gap identity.
-
-        Releases before v1.0.2 relied on a digest whose inputs changed over time.
-        Existing databases can therefore contain multiple active proposals for one
-        gap. Keep the most advanced proposal, repoint staged artifacts, remove the
-        redundant active rows, and then add a partial unique index.
-        """
         placeholders = ",".join("?" for _ in ACTIVE_PROPOSAL_STATUSES)
         duplicate_gaps = db.execute(
             f"""SELECT gap_key FROM learning_proposals
-                WHERE status IN ({placeholders})
-                GROUP BY gap_key HAVING COUNT(*) > 1""",
+                WHERE status IN ({placeholders}) GROUP BY gap_key HAVING COUNT(*) > 1""",
             ACTIVE_PROPOSAL_STATUSES,
         ).fetchall()
-
-        status_rank = """CASE status
-            WHEN 'staged' THEN 4
-            WHEN 'running' THEN 3
-            WHEN 'approved' THEN 2
-            WHEN 'proposed' THEN 1
-            ELSE 0 END"""
+        rank = """CASE status WHEN 'staged' THEN 4 WHEN 'running' THEN 3
+            WHEN 'approved' THEN 2 WHEN 'proposed' THEN 1 ELSE 0 END"""
         for duplicate in duplicate_gaps:
             rows = db.execute(
                 f"""SELECT proposal_id FROM learning_proposals
                     WHERE gap_key=? AND status IN ({placeholders})
-                    ORDER BY {status_rank} DESC, priority DESC, created_at ASC, proposal_id ASC""",
+                    ORDER BY {rank} DESC,priority DESC,created_at ASC,proposal_id ASC""",
                 (duplicate["gap_key"], *ACTIVE_PROPOSAL_STATUSES),
             ).fetchall()
             survivor = rows[0]["proposal_id"]
             redundant = [row["proposal_id"] for row in rows[1:]]
-            if not redundant:
-                continue
-            redundant_placeholders = ",".join("?" for _ in redundant)
-            db.execute(
-                f"UPDATE staged_artifacts SET proposal_id=? WHERE proposal_id IN ({redundant_placeholders})",
-                (survivor, *redundant),
-            )
-            db.execute(
-                f"DELETE FROM learning_proposals WHERE proposal_id IN ({redundant_placeholders})",
-                redundant,
-            )
-
+            if redundant:
+                marks = ",".join("?" for _ in redundant)
+                db.execute(
+                    f"UPDATE staged_artifacts SET proposal_id=? WHERE proposal_id IN ({marks})",
+                    (survivor, *redundant),
+                )
+                db.execute(f"DELETE FROM learning_proposals WHERE proposal_id IN ({marks})", redundant)
         db.execute(
             """CREATE UNIQUE INDEX IF NOT EXISTS uq_active_learning_gap
                ON learning_proposals(gap_key)
@@ -118,23 +124,31 @@ class CognitiveStore:
                 (event_type, entity_id, json.dumps(payload, sort_keys=True), utc_now()),
             )
 
+    def metadata(self, key: str) -> str | None:
+        with self.connect() as db:
+            row = db.execute("SELECT value FROM metadata WHERE key=?", (key,)).fetchone()
+        return str(row[0]) if row else None
+
+    def set_metadata(self, key: str, value: str) -> None:
+        with self.connect() as db:
+            db.execute(
+                "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+
     def save_event(self, event: CognitiveEvent) -> bool:
         with self.connect() as db:
             cur = db.execute(
                 "INSERT OR IGNORE INTO events VALUES(?,?,?,?,?,?,?)",
-                (
-                    event.event_id,
-                    event.kind,
-                    event.source,
-                    event.subject,
-                    event.confidence,
-                    json.dumps(event.payload, sort_keys=True),
-                    event.occurred_at,
-                ),
+                (event.event_id, event.kind, event.source, event.subject, event.confidence,
+                 json.dumps(event.payload, sort_keys=True), event.occurred_at),
             )
             created = cur.rowcount == 1
-        if created:
-            self.journal("event.observed", event.event_id, {"kind": event.kind})
+            if created:
+                db.execute(
+                    "INSERT INTO journal(event_type,entity_id,payload_json,created_at) VALUES(?,?,?,?)",
+                    ("event.observed", event.event_id, json.dumps({"kind": event.kind}), utc_now()),
+                )
         return created
 
     def pattern(self, key: str) -> dict[str, Any] | None:
@@ -176,14 +190,49 @@ class CognitiveStore:
                     "SELECT key_a,key_b,weight FROM edges WHERE key_a=? OR key_b=?", (node, node)
                 ).fetchall()
                 total = sum(float(row[2]) for row in rows)
-                if total <= cap or not rows:
-                    continue
-                scale = cap / total
-                for a, b, weight in rows:
-                    db.execute(
-                        "UPDATE edges SET weight=? WHERE key_a=? AND key_b=?",
-                        (float(weight) * scale, a, b),
-                    )
+                if total > cap and rows:
+                    scale = cap / total
+                    for a, b, weight in rows:
+                        db.execute(
+                            "UPDATE edges SET weight=? WHERE key_a=? AND key_b=?",
+                            (float(weight) * scale, a, b),
+                        )
+
+    def get_relevant_patterns(self, keys: list[str], limit: int) -> list[dict[str, Any]]:
+        limit = max(0, min(limit, 64))
+        with self.connect() as db:
+            if keys:
+                marks = ",".join("?" for _ in keys)
+                rows = db.execute(
+                    f"SELECT * FROM patterns WHERE pattern_key IN ({marks}) ORDER BY weight DESC LIMIT ?",
+                    (*keys, limit),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT * FROM patterns ORDER BY weight DESC LIMIT ?", (limit,)
+                ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_connected_edges(self, keys: list[str], limit: int) -> list[dict[str, Any]]:
+        if not keys:
+            return []
+        limit = max(0, min(limit, 128))
+        marks = ",".join("?" for _ in keys)
+        with self.connect() as db:
+            rows = db.execute(
+                f"""SELECT * FROM edges WHERE key_a IN ({marks}) OR key_b IN ({marks})
+                    ORDER BY weight DESC LIMIT ?""",
+                (*keys, *keys, limit),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_open_gaps(self, limit: int) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM gaps WHERE status='open' ORDER BY priority DESC LIMIT ?",
+                (max(0, min(limit, 32)),),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def upsert_gap(self, key: str, topic: str, kind: str, reason: str, priority: float) -> None:
         now = utc_now()
@@ -197,14 +246,14 @@ class CognitiveStore:
 
     def decay(self, policy: MacesPolicy, now: str | None = None) -> dict[str, int]:
         current = datetime.fromisoformat(now or utc_now())
+        last = self.metadata("last_decay_at")
+        if last and (current - datetime.fromisoformat(last)).total_seconds() < 86400:
+            return {"changed": 0, "pruned": 0}
         changed = pruned = 0
         with self.connect() as db:
             for table, keycols in (("patterns", ("pattern_key",)), ("edges", ("key_a", "key_b"))):
                 for row in db.execute(f"SELECT * FROM {table}").fetchall():
-                    days = max(
-                        0.0,
-                        (current - datetime.fromisoformat(row["last_seen"])).total_seconds() / 86400,
-                    )
+                    days = max(0.0, (current - datetime.fromisoformat(row["last_seen"])).total_seconds() / 86400)
                     weight = float(row["weight"]) * math.exp(-days / policy.decay_tau_days)
                     where = " AND ".join(f"{key}=?" for key in keycols)
                     values = tuple(row[key] for key in keycols)
@@ -217,33 +266,31 @@ class CognitiveStore:
                             (weight, current.isoformat(), *values),
                         )
                         changed += 1
-        self.journal("consolidation.decay", None, {"changed": changed, "pruned": pruned})
+            db.execute(
+                "INSERT INTO metadata(key,value) VALUES('last_decay_at',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (current.astimezone(UTC).isoformat(),),
+            )
+            db.execute(
+                "INSERT INTO journal(event_type,entity_id,payload_json,created_at) VALUES(?,?,?,?)",
+                ("consolidation.decay", None, json.dumps({"changed": changed, "pruned": pruned}), utc_now()),
+            )
         return {"changed": changed, "pruned": pruned}
 
     def create_learning_proposal(self, proposal: LearningProposal) -> bool:
-        placeholders = ",".join("?" for _ in ACTIVE_PROPOSAL_STATUSES)
+        marks = ",".join("?" for _ in ACTIVE_PROPOSAL_STATUSES)
         try:
             with self.connect() as db:
                 existing = db.execute(
-                    f"""SELECT 1 FROM learning_proposals
-                        WHERE gap_key=? AND status IN ({placeholders}) LIMIT 1""",
+                    f"SELECT 1 FROM learning_proposals WHERE gap_key=? AND status IN ({marks}) LIMIT 1",
                     (proposal.gap_key, *ACTIVE_PROPOSAL_STATUSES),
                 ).fetchone()
                 if existing:
                     return False
                 db.execute(
                     "INSERT INTO learning_proposals VALUES(?,?,?,?,?,?,?,?,?)",
-                    (
-                        proposal.proposal_id,
-                        proposal.digest,
-                        proposal.topic,
-                        proposal.reason,
-                        proposal.priority,
-                        json.dumps(proposal.required_sources),
-                        proposal.gap_key,
-                        proposal.status.value,
-                        proposal.created_at,
-                    ),
+                    (proposal.proposal_id, proposal.digest, proposal.topic, proposal.reason,
+                     proposal.priority, json.dumps(proposal.required_sources), proposal.gap_key,
+                     proposal.status.value, proposal.created_at),
                 )
             return True
         except sqlite3.IntegrityError:
@@ -253,15 +300,8 @@ class CognitiveStore:
         with self.connect() as db:
             db.execute(
                 "INSERT INTO staged_artifacts VALUES(?,?,?,?,?,?,?)",
-                (
-                    artifact.artifact_id,
-                    artifact.proposal_id,
-                    artifact.title,
-                    artifact.content,
-                    json.dumps(artifact.sources),
-                    artifact.confidence,
-                    artifact.created_at,
-                ),
+                (artifact.artifact_id, artifact.proposal_id, artifact.title, artifact.content,
+                 json.dumps(artifact.sources), artifact.confidence, artifact.created_at),
             )
         self.journal("artifact.staged", artifact.artifact_id, {"proposal_id": artifact.proposal_id})
 
@@ -269,28 +309,13 @@ class CognitiveStore:
         with self.connect() as db:
             db.execute(
                 "INSERT INTO promotion_proposals VALUES(?,?,?,?,?,?,?)",
-                (
-                    proposal.proposal_id,
-                    proposal.digest,
-                    proposal.artifact_id,
-                    proposal.target_path,
-                    proposal.operation,
-                    "proposed",
-                    proposal.created_at,
-                ),
+                (proposal.proposal_id, proposal.digest, proposal.artifact_id, proposal.target_path,
+                 proposal.operation, "proposed", proposal.created_at),
             )
 
     def list_table(self, table: str) -> list[dict[str, Any]]:
-        allowed = {
-            "events",
-            "patterns",
-            "edges",
-            "gaps",
-            "learning_proposals",
-            "staged_artifacts",
-            "promotion_proposals",
-            "journal",
-        }
+        allowed = {"events", "patterns", "edges", "gaps", "learning_proposals",
+                   "staged_artifacts", "promotion_proposals", "journal", "metadata"}
         if table not in allowed:
             raise ValueError(f"unsupported table: {table}")
         with self.connect() as db:
