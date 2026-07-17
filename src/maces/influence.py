@@ -18,45 +18,40 @@ class InfluenceEngine:
         self.policy = policy or MacesPolicy()
 
     def signal(self, concepts: list[str]) -> InfluenceSignal:
-        patterns = self.store.list_table("patterns")
-        edges = self.store.list_table("edges")
-        gaps = self.store.list_table("gaps")
         wanted = {_key(c): c.strip().lower() for c in concepts if c.strip()}
-
-        # Validate persisted labels again at the output boundary so hostile legacy
-        # rows can never be rendered into an LLM prompt.
+        query_limit = max(self.policy.influence_max_items * 4, 8)
+        patterns = self.store.get_relevant_patterns(list(wanted), query_limit)
         safe_patterns = [r for r in patterns if is_valid_pattern_label(str(r["label"]))]
         relevant = [r for r in safe_patterns if r["pattern_key"] in wanted]
         if not relevant:
-            relevant = sorted(safe_patterns, key=lambda r: float(r["weight"]), reverse=True)[:2]
+            relevant = safe_patterns[:2]
 
         attention_candidates = [
             (str(r["label"]), float(r["weight"]))
-            for r in sorted(relevant, key=lambda r: float(r["weight"]), reverse=True)
+            for r in relevant
             if float(r["weight"]) >= self.policy.minimum_influence_weight
         ]
 
-        # Edges only expand from nodes that already carry enough node weight.
-        # Mention-only edges cannot promote a zero-weight node into attention.
+        edges = self.store.get_connected_edges(list(wanted), query_limit)
+        endpoint_keys = {str(r["key_a"]) for r in edges} | {str(r["key_b"]) for r in edges}
+        endpoint_patterns = self.store.get_relevant_patterns(list(endpoint_keys), query_limit * 2)
+        safe_endpoints = [r for r in endpoint_patterns if is_valid_pattern_label(str(r["label"]))]
         weighted_keys = {
-            r["pattern_key"]
-            for r in safe_patterns
+            str(r["pattern_key"])
+            for r in safe_endpoints
             if float(r["weight"]) >= self.policy.minimum_influence_weight
         }
-        labels = {r["pattern_key"]: r["label"] for r in safe_patterns}
-        connected = [
-            r
-            for r in edges
-            if (r["key_a"] in wanted or r["key_b"] in wanted)
-            and r["key_a"] in weighted_keys
-            and r["key_b"] in weighted_keys
-        ]
+        labels = {str(r["pattern_key"]): str(r["label"]) for r in safe_endpoints}
         association_candidates = [
-            (str(labels[r["key_a"]]), str(labels[r["key_b"]]), float(r["weight"]))
-            for r in sorted(connected, key=lambda r: float(r["weight"]), reverse=True)
-            if float(r["weight"]) >= self.policy.minimum_influence_weight
+            (labels[str(r["key_a"])], labels[str(r["key_b"])], float(r["weight"]))
+            for r in edges
+            if str(r["key_a"]) in weighted_keys
+            and str(r["key_b"]) in weighted_keys
+            and float(r["weight"]) >= self.policy.minimum_influence_weight
         ]
-        verify_candidates = [str(r["topic"]) for r in gaps if r["status"] == "open"]
+        verify_candidates = [
+            str(r["topic"]) for r in self.store.get_open_gaps(query_limit)
+        ]
 
         remaining = self.policy.influence_max_items
         attention = attention_candidates[:remaining]
@@ -64,7 +59,6 @@ class InfluenceEngine:
         associations = association_candidates[:remaining]
         remaining -= len(associations)
         verify = verify_candidates[:remaining]
-
         values = [w for _, w in attention] + [w for _, _, w in associations]
         signal = InfluenceSignal(
             attention,
