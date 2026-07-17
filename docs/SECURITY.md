@@ -31,6 +31,20 @@ The handler receives `raw_args: str`, uses a strict `shlex`-based parser, accept
 
 Learning is deny-by-default. It requires an explicit `ok` status, no `error_type`, and an allowlisted tool. Only named safe string fields are considered. The result contributes only aggregate metadata such as length and success state; its body is not stored.
 
+## Reporting a vulnerability
+
+Do not open a public issue for suspected credential retention, profile-boundary violations, path disclosure, or unintended Canon writes. Use GitHub Private Vulnerability Reporting for this repository.
+
+Include the affected MACES version, Hermes version, operating system, reproduction steps, and sanitized evidence. Never attach a real subconscious database, Vault content, Session SQLite file, credential, raw conversation, complete pattern list, session identifier, email address, or absolute private path.
+
+If GitHub Private Vulnerability Reporting is not visible on the repository Security page, do not post sensitive details publicly. Contact the repository owner through a private channel and ask them to enable the private reporting form.
+
+## Supported versions
+
+Security fixes are provided for the latest published MACES release. Until a wider compatibility matrix is published, Hermes Agent 0.18.2 is the verified host version. CI verifies Python 3.11–3.13 on Ubuntu and macOS, while the blocking real-PluginManager E2E remains pinned to Python 3.11 and Hermes Agent 0.18.2.
+
 ## Verification
 
-Privacy regression tests scan `subconscious.db`, `subconscious.db-wal`, and `subconscious.db-shm` while a read transaction keeps WAL state available. The real PluginManager E2E also verifies that Hindsight, Obsidian, session SQLite, and profile memory sentinels remain byte-identical.
+Privacy regression tests scan `subconscious.db`, `subconscious.db-wal`, and `subconscious.db-shm` while a read transaction keeps WAL state available. The real PluginManager E2E also verifies that Hindsight, Obsidian, Session SQLite, and profile memory sentinels remain byte-identical.
+
+Repository release checks also reject tracked MACES databases, local data directories, private-key markers, and non-test absolute user paths. Fictional security fixtures remain in tests because they verify the scrubber boundary.

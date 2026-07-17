@@ -9,11 +9,10 @@ plugins:
         max_items: 4
         max_chars: 700
         minimum_weight: 0.10
-      # Before shadow evaluation, populate 2-3 known successful retrieval tools.
-      # Include only safe query/topic string fields.
-      learnable_tool_fields:
-        web_search:
-          - query
+      # Safe default: no tool may create a positive retrieval signal.
+      # Before a real Shadow evaluation, explicitly add only 2-3 reviewed
+      # retrieval tools and safe query/topic string fields in the profile config.
+      learnable_tool_fields: {}
       limits:
         max_patterns: 5000
         max_edges: 20000
