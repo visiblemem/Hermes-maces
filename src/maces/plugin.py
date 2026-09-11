@@ -14,6 +14,7 @@ from time import perf_counter
 from typing import Any
 
 from .engine import MacesEngine
+from .feedback import preview_feedback, render_feedback_preview
 from .models import CognitiveEvent
 from .policy import MacesPolicy
 from .secure_store import CognitiveStore
@@ -37,6 +38,7 @@ _MAX_PENDING_TURNS = 256
 _USAGE = (
     "Usage: /maces-feedback confirmed <concept,concept>\n"
     "       /maces-feedback corrected <concept,concept>"
+    "\n       /maces-feedback preview <Chinese feedback>"
 )
 _RUNTIME_LOCK = threading.RLock()
 _RUNTIMES: dict[tuple[str, str], "ProfileRuntime"] = {}
@@ -66,6 +68,23 @@ class PendingTurn:
 def _extract_passive(text: str, policy: MacesPolicy | None = None) -> ExtractedConcepts:
     active = policy or MacesPolicy()
     scrubbed_text, scrubbed = scrub_text(text)
+    feedback = preview_feedback(text)
+    if feedback.kind in {"temporary", "ambiguous"} or (
+        feedback.kind == "rejected" and feedback.reason != "invalid_length"
+    ):
+        # Ambiguous praise, one-off requests, and quotations are not durable concepts.
+        return ExtractedConcepts([], [], scrubbed)
+    if feedback.actions:
+        labels = [
+            item.concept for item in feedback.actions
+            if item.verdict == "confirmed"
+            and not any(word and word in item.concept for word in active.zh_stopwords)
+        ]
+        return ExtractedConcepts(
+            [label for label in labels if not _CJK_RUN.search(label)],
+            [label for label in labels if _CJK_RUN.search(label)],
+            scrubbed,
+        )
     patterns: list[str] = []
     for match in _LATIN.findall(scrubbed_text):
         candidate = match.lower()
@@ -128,6 +147,7 @@ def _parse_feedback(raw_args: str) -> tuple[str, list[str]] | None:
     if len(tokens) < 2:
         return None
     verdict = tokens[0].strip().lower()
+    verdict = {"肯定": "confirmed", "更正": "corrected"}.get(verdict, verdict)
     if verdict not in {"confirmed", "corrected"}:
         return None
     raw_concepts = re.split(r"[,，\s]+", " ".join(tokens[1:]).strip())
@@ -443,6 +463,9 @@ class ProfileRuntime:
             log.exception("MACES session cleanup failed; Hermes lifecycle is unaffected")
 
     def feedback_command(self, raw_args: str) -> str:
+        parts = str(raw_args or "").strip().split(maxsplit=1)
+        if parts and parts[0].lower() == "preview":
+            return render_feedback_preview(preview_feedback(parts[1] if len(parts) > 1 else ""))
         parsed = _parse_feedback(raw_args)
         if parsed is None:
             return _USAGE
@@ -561,7 +584,7 @@ def register(ctx: Any) -> ProfileRuntime:
         "maces-feedback",
         runtime.feedback_command,
         description="Confirm or correct MACES concepts explicitly",
-        args_hint="<confirmed|corrected> <concepts>",
+        args_hint="<confirmed|corrected|肯定|更正> <concepts> | preview <text>",
     )
     ctx.register_command(
         "maces-status",

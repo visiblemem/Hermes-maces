@@ -259,6 +259,30 @@ Feedback is available only as an explicit operator command, never as a model too
 /maces-top 10
 ```
 
+### Chinese feedback preview
+
+Preview supported Traditional Chinese feedback without writing any MACES state:
+
+```text
+/maces-feedback preview 我喜歡極簡風格
+/maces-feedback preview 以後不要用紫色漸層，改用黑白風格
+```
+
+The response labels the interpretation as **not saved** and suggests explicit confirmation or correction commands. It does not automatically execute them. `肯定` and `更正` are operator-command aliases for `confirmed` and `corrected`:
+
+```text
+/maces-feedback 肯定 極簡風格
+/maces-feedback 更正 紫色漸層
+```
+
+- Clear personal preferences and explicit future-use requests can produce a bounded preview.
+- One-off requests such as `今天先用黑白風格` do not become persistent preferences.
+- References such as `照剛才那樣`, quoted/reported speech, questions, conditions, conflicts, and unsupported scoped instructions require clarification instead of guessing.
+- Input matching sensitive-data shapes is not echoed; previews are limited to 1,024 input characters and four validated concepts. MACES stores neither preview text nor preview state; Hermes itself retains its own command/logging policy.
+- Passive extraction skips recognized temporary or ambiguous feedback rather than retaining context-free praise. Ordinary conversation still cannot confirm preference weights.
+
+This is a conservative rule-based preview, not general Chinese semantic understanding or automatic conversation-history resolution. It uses no extra model, OAuth, or API service. A preview is not an approval capability/token: only a subsequent explicit operator command can write feedback. It is scoped to the current native Hermes profile and does not modify PWA or Hindsight.
+
 Invalid feedback returns usage text and writes nothing. Status output is aggregate-only and never displays raw sensitive material.
 
 `corrected` retracts a previous recommendation; it is not a new instruction to avoid the concept in every future context. Use Hermes native instructions/memory for durable prohibitions. `confirmed` may explicitly establish a new preference after a correction. Ordinary conversational approval is not automatically equivalent to this operator command.

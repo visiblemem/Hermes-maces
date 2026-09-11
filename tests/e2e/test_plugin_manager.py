@@ -310,3 +310,20 @@ def test_real_plugin_manager_feedback_controls_active_influence(tmp_path):
     feedback("corrected purple")
     assert manager.invoke_hook("pre_llm_call", user_message="purple") == []
     assert "purple" not in manager._plugin_commands["maces-top"]["handler"]("")
+
+
+def test_real_plugin_manager_chinese_preview_does_not_learn(tmp_path):
+    manager = _install_plugin(tmp_path / "home", {"shadow_mode": False})
+    runtime = _runtime(manager)
+    feedback = manager._plugin_commands["maces-feedback"]["handler"]
+    tables = ("patterns", "edges", "events", "journal")
+    before = {table: runtime.engine.store.list_table(table) for table in tables}
+    result = feedback("preview 以後不要用紫色漸層，改用黑白風格")
+    assert "未寫入" in result
+    assert "/maces-feedback corrected 紫色漸層" in result
+    assert "/maces-feedback confirmed 黑白風格" in result
+    assert {table: runtime.engine.store.list_table(table) for table in tables} == before
+    assert "recorded confirmed" in feedback("肯定 黑白風格")
+    assert manager.invoke_hook("pre_llm_call", user_message="黑白風格")
+    assert "recorded corrected" in feedback("更正 黑白風格")
+    assert manager.invoke_hook("pre_llm_call", user_message="黑白風格") == []
