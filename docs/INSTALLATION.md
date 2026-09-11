@@ -2,14 +2,16 @@
 
 ## Preconditions
 
-Record the Hermes version and MACES commit, back up the profile `config.yaml`, verify Hindsight health, and record hashes for the Obsidian vault, session SQLite, and profile memory. Install only one profile at a time.
+Record the Hermes version and MACES commit, record configuration changes and rollback information under the operator's backup policy, verify Hindsight health, and record hashes for profile memory. Do not copy live session databases just to install MACES. Install only one profile at a time.
 
 ## Install without enabling
 
 ```bash
 hermes profile use default
-hermes plugins install visiblemem/Hermes-maces --no-enable
+hermes plugins install visiblemem/Hermes-maces --ref <RUNTIME_COMMIT_SHA> --no-enable
 ```
+
+Use a reviewed runtime-distribution SHA as described in [Runtime distribution](RUNTIME_DISTRIBUTION.md). Verify that local CLI help supports `--ref`. Keep security scanning enabled; do not force a blocked development checkout into production.
 
 Add the `plugins.entries.hermes-maces` section from `config.example.yaml` to the active profile's Hermes configuration. Do not use a `config.yaml` inside the repository as user configuration.
 
