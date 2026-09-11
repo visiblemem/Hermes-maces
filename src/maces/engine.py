@@ -36,34 +36,40 @@ class MacesEngine:
         labels = self._labels(original_payload)
         keys = {label: _key(label) for label in labels}
         kind = str(event.kind)
-        positive = kind in {str(EventKind.ANSWER_CONFIRMED), str(EventKind.DECISION_CONFIRMED)}
-        negative = kind == str(EventKind.ANSWER_CORRECTED)
-        retrieval = kind == str(EventKind.RETRIEVAL_USED)
+        operator = original_payload.get("operator_driven") is True
+        positive = operator and kind in {
+            str(EventKind.ANSWER_CONFIRMED), str(EventKind.DECISION_CONFIRMED)
+        }
+        negative = operator and kind == str(EventKind.ANSWER_CORRECTED)
+        confirmation = True if positive else False if negative else None
 
         for label, key in keys.items():
             row = self.store.pattern(key)
-            old = float(row["weight"]) if row else 0.0
+            old = float(row["weight"]) if row and row["operator_confirmed"] else 0.0
             if positive:
                 weight = self.policy.reinforce(old)
             elif negative:
                 weight = self.policy.penalize(old)
-            elif retrieval:
-                weight = self.policy.reinforce_retrieval(old)
             else:
                 weight = old
-            self.store.put_pattern(key, label, weight, event.event_id, event.occurred_at)
+            self.store.put_pattern(
+                key, label, weight, event.event_id, event.occurred_at,
+                operator_confirmed=confirmation,
+            )
 
         edge_count = 0
         for a, b in combinations(keys.values(), 2):
             row = self.store.edge(a, b)
-            old = float(row["weight"]) if row else 0.0
+            old = float(row["weight"]) if row and row["operator_confirmed"] else 0.0
             if negative:
                 weight = self.policy.penalize(old)
-            elif positive or retrieval:
+            elif positive:
                 weight = self.policy.reinforce(old)
             else:
                 weight = old
-            self.store.put_edge(a, b, weight, event.occurred_at)
+            self.store.put_edge(
+                a, b, weight, event.occurred_at, operator_confirmed=confirmation,
+            )
             edge_count += 1
         self.store.normalize_edges(self.policy.outbound_edge_cap, list(keys.values()))
 

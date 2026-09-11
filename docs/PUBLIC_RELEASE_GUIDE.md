@@ -16,7 +16,7 @@
 - `shadow_mode: true` and an empty `learnable_tool_fields` are the safe defaults.
 - Storage identity derives only from trusted `ctx.profile_name` and the active Hermes profile home.
 - All text-bearing persistence crosses the central privacy scrubber.
-- Failed, cancelled, denied, ambiguous, or non-allowlisted tools never create positive learning signals.
+- Failed, cancelled, denied, ambiguous, or non-allowlisted tools never create learning evidence. Successful retrieval records occurrence only, not preference weight.
 - Passive Traditional Chinese learning remains candidate-first and cross-session validated.
 - MACES exposes no model tools.
 - Disabling MACES must restore ordinary Hermes behavior without modifying other memory systems.
@@ -69,7 +69,7 @@ GitHub Private Vulnerability Reporting must be enabled before public release. Su
 
 Blocking unit/security checks run on:
 
-- Ubuntu latest and macOS latest;
+- Ubuntu latest, macOS latest, and Windows latest;
 - Python 3.11, 3.12, and 3.13.
 
 Every matrix entry runs:
@@ -87,15 +87,17 @@ python -m twine check dist/*
 
 ### Real Hermes E2E
 
-The blocking PluginManager E2E remains pinned to:
+The expanded PluginManager E2E targets:
 
 ```text
-Hermes Agent 0.18.2
+Hermes Agent 0.18.2 (PyPI) and 0.21.1 (pinned source)
 Python 3.11
-Ubuntu latest
+Ubuntu latest and Windows latest
 ```
 
 Do not raise the verified Hermes baseline without a complete E2E pass.
+
+The 0.21.1 source is pinned to `2237be355906fbe6065ce1815711eee52b2d646e` in CI. A matrix entry is a target, not evidence of a successful run.
 
 ### Public boundary contract
 
@@ -143,6 +145,7 @@ Shadow must run for at least seven days and include:
 - at least 30 completed normal user turns;
 - at least five distinct sessions;
 - at least ten successful allowlisted retrievals;
+- explicit operator-confirmed concepts sufficient to review non-zero patterns; retrievals alone do not satisfy this;
 - at least one gateway restart;
 - at least one disable, restart, and re-enable test;
 - PWA plus at least one other real interface.

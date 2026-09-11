@@ -13,7 +13,7 @@ hermes plugins install visiblemem/Hermes-maces --no-enable
 
 Add the `plugins.entries.hermes-maces` section from `config.example.yaml` to the active profile's Hermes configuration. Do not use a `config.yaml` inside the repository as user configuration.
 
-Populate a small allowlist for two or three known successful retrieval tools before beginning the shadow period; an empty allowlist plus no manual feedback produces no meaningful signals.
+Optionally populate a small allowlist for two or three reviewed retrieval tools to evaluate occurrence extraction. Retrievals never create preference weight. Meaningful non-zero influence evaluation requires explicit operator feedback, regardless of the allowlist.
 
 ## Enable in shadow mode
 

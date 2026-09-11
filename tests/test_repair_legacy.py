@@ -56,6 +56,23 @@ def test_feedback_parser_accepts_raw_traditional_chinese():
     assert _parse_feedback("confirmed x") is None
 
 
+def test_pending_is_bounded_when_host_skips_completion(tmp_path, install_fake_hermes):
+    from maces.plugin import _MAX_PENDING_TURNS
+
+    install_fake_hermes(tmp_path)
+    runtime = register(FakeContext("default"))
+    for index in range(_MAX_PENDING_TURNS + 5):
+        runtime.pre_llm_call("lighting", session_id="shared", turn_id=str(index))
+    assert len(runtime.pending) == _MAX_PENDING_TURNS
+    assert runtime.pending_evictions == 5
+    assert "pending_evictions=5" in runtime.status_command()
+    # A completed turn can still be learned from the host's user_message after eviction.
+    runtime.post_llm_call(session_id="shared", turn_id="0", user_message="lighting")
+    assert runtime.engine.store.pattern(key("lighting"))["weight"] == 0
+    runtime.on_session_cleanup(session_id="shared")
+    assert runtime.pending == {}
+
+
 def test_register_uses_profile_home_and_ignores_forged_kwargs(tmp_path, install_fake_hermes):
     home = tmp_path / "profiles" / "design"
     install_fake_hermes(home, {"plugins": {"entries": {"hermes-maces": {}}}})

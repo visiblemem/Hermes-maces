@@ -14,6 +14,12 @@ import yaml
 pytestmark = pytest.mark.e2e
 
 
+@pytest.fixture(autouse=True)
+def isolated_host_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "isolated-host"))
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
+
+
 def _purge_loaded_plugin() -> None:
     for name in list(sys.modules):
         if name == "hermes_plugins.hermes_maces" or name.startswith(
@@ -192,7 +198,12 @@ def test_real_plugin_manager_tool_gate_concurrency_cleanup_and_shadow(tmp_path):
 
     with ThreadPoolExecutor(max_workers=10) as pool:
         list(pool.map(run_turn, range(50)))
+    # Recent hosts may skip overlapping observer callbacks; session cleanup must
+    # clear their pre-call state without disabling the host's timeout protection.
+    for index in range(5):
+        manager.invoke_hook("on_session_reset", session_id=f"s-{index}")
     assert runtime.pending == {}
+    assert runtime.error_count == 0
 
     manager.invoke_hook(
         "pre_llm_call",
@@ -281,3 +292,21 @@ def test_real_plugin_manager_privacy_staging_and_disabled_inertness(tmp_path):
     assert loaded.enabled is False
     assert "maces-feedback" not in disabled._plugin_commands
     assert not (disabled_home / "data" / "maces" / "subconscious.db").exists()
+
+
+def test_real_plugin_manager_feedback_controls_active_influence(tmp_path):
+    manager = _install_plugin(tmp_path / "home", {
+        "shadow_mode": False,
+        "learnable_tool_fields": {"web_search": ["query"]},
+    })
+    for _ in range(5):
+        manager.invoke_hook("post_tool_call", tool_name="web_search",
+                            args={"query": "purple gradient"}, result='{"status":"ok"}')
+    assert manager.invoke_hook("pre_llm_call", user_message="purple") == []
+    feedback = manager._plugin_commands["maces-feedback"]["handler"]
+    for _ in range(3):
+        feedback("confirmed purple,gradient")
+    assert manager.invoke_hook("pre_llm_call", user_message="purple")
+    feedback("corrected purple")
+    assert manager.invoke_hook("pre_llm_call", user_message="purple") == []
+    assert "purple" not in manager._plugin_commands["maces-top"]["handler"]("")

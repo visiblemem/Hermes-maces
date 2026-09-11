@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import re
 import subprocess
+import tomllib
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -75,6 +78,16 @@ def main() -> None:
         errors.append("repository-owned config.yaml is forbidden")
     if (ROOT / "data").exists():
         errors.append("repository data/ directory is forbidden")
+
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    manifest = yaml.safe_load((ROOT / "plugin.yaml").read_text(encoding="utf-8"))
+    version = project["project"]["version"]
+    if manifest.get("version") != version:
+        errors.append("plugin and package versions must match")
+    if manifest.get("provides_tools") != []:
+        errors.append("MACES must not expose model tools")
+    if f"## {version}" not in (ROOT / "CHANGELOG.md").read_text(encoding="utf-8").splitlines():
+        errors.append("package version must have a changelog entry")
 
     for relative in tracked_files():
         normalized = relative.replace("\\", "/")

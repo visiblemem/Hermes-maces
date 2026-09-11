@@ -9,7 +9,7 @@ plugins:
         max_items: 4
         max_chars: 700
         minimum_weight: 0.10
-      # Safe default: no tool may create a positive retrieval signal.
+      # Safe default: no tool occurrence learning. Retrieval never confirms preferences.
       # Before a real Shadow evaluation, explicitly add only 2-3 reviewed
       # retrieval tools and safe query/topic string fields in the profile config.
       learnable_tool_fields: {}
