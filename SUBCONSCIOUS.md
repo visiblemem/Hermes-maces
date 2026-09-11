@@ -33,6 +33,8 @@ Nodes and edges require persisted `operator_confirmed` provenance and a strictly
 
 ## Surfacing
 
+`/maces-feedback preview <Chinese feedback>` is a read-only operator preview. Supported clear statements yield bounded confirmation/correction suggestions; temporary, quoted, ambiguous, conditional, or conflicting statements do not yield executable feedback suggestions. Preview state is not persisted, no conversational reference is guessed, and the runtime does not invoke the suggested commands. `肯定` / `更正` retain the explicit operator-only feedback boundary.
+
 Staging is dark state. Promotion creates a digest-bound proposal with source and status metadata. Until a separately trusted Canon integration exists, proposals cannot modify Obsidian or any other canonical store and cannot be promoted automatically.
 
 ## Journal

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add read-only Traditional Chinese feedback previews and explicit `肯定` / `更正` aliases.
+- Distinguish supported persistent preference statements from one-off, ambiguous, quoted, conditional, conflicting, and sensitive feedback without calling a model or saving preview text.
+- Skip recognized temporary/ambiguous feedback during passive concept extraction.
+
 - Successful retrieval records occurrence evidence without reinforcing preference or association weights.
 - Explicit correction immediately retracts the concept and all incident associations; passive events cannot reactivate them.
 - Persist operator-confirmation provenance, including a fail-closed additive migration for legacy weights.
