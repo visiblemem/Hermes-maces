@@ -137,8 +137,9 @@ Each profile has an independent MACES database and must be evaluated independent
 - CI targets Python 3.11, 3.12, and 3.13 on Ubuntu, macOS, and Windows.
 - Real-PluginManager E2E targets Hermes Agent 0.18.2 and 0.21.1 on Ubuntu and Windows with Python 3.11. The 0.21.1 host is pinned to source commit `2237be355906fbe6065ce1815711eee52b2d646e`, not an unavailable PyPI version.
 - Hermes currently uses `hermes plugins install owner/repo` as the distribution and registration path for external subsystems.
-- That command shallow-clones the repository's default branch and does not pin a GitHub Release tag.
-- `main` is therefore the version users install and must contain only reviewed, CI-green commits.
+- Unpinned installs use the default branch, not a GitHub Release tag.
+- Newer Hermes installers support `--ref <40-character commit SHA>`; verify local CLI help before use.
+- Development sources include adversarial security tests. Use a reviewed runtime-only distribution commit for installation; see [`docs/RUNTIME_DISTRIBUTION.md`](docs/RUNTIME_DISTRIBUTION.md).
 
 The expanded CI targets are not a claim of completed validation. Check the workflow results for the exact MACES commit before treating an OS/host combination as verified. Real-world Shadow validation remains separate.
 
@@ -152,10 +153,12 @@ Hermes does not yet expose a dedicated subconscious-subsystem installer, so the 
 
    ```bash
    hermes profile use default
-   hermes plugins install visiblemem/Hermes-maces --no-enable
+   hermes plugins install visiblemem/Hermes-maces --ref <RUNTIME_COMMIT_SHA> --no-enable
    ```
 
-2. Back up the active profile's Hermes `config.yaml`.
+   Replace the placeholder with a reviewed runtime-distribution commit, not a development commit. Keep the native security scanner enabled. If `--ref` is unsupported, stop rather than silently installing a different revision.
+
+2. Record the active profile's configuration changes and rollback information according to the operator's backup policy.
 3. Copy the safe defaults from [`config.example.yaml`](config.example.yaml) into that profile's config.
 4. Keep `shadow_mode: true` and `learnable_tool_fields: {}` until fields have been reviewed.
 5. Add only reviewed retrieval tools and query-like string fields when a meaningful Shadow evaluation is required.

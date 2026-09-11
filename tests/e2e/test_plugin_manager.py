@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import sqlite3
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +9,8 @@ from pathlib import Path
 
 import pytest
 import yaml
+
+from build_runtime import build_runtime
 
 pytestmark = pytest.mark.e2e
 
@@ -33,10 +34,7 @@ def _install_plugin(home: Path, entry: dict | None = None, *, enabled: bool = Tr
 
     source = Path(__file__).resolve().parents[2]
     destination = home / "plugins" / "hermes-maces"
-    destination.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source / "__init__.py", destination / "__init__.py")
-    shutil.copy2(source / "plugin.yaml", destination / "plugin.yaml")
-    shutil.copytree(source / "src", destination / "src", dirs_exist_ok=True)
+    build_runtime(source, destination, "a" * 40)
 
     config = {
         "plugins": {

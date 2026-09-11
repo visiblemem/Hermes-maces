@@ -33,7 +33,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e '.[dev]'
       - name: Lint
-        run: ruff check src tests __init__.py
+        run: ruff check src tests scripts/build_runtime.py __init__.py
       - name: Compile
         run: python -m compileall -q src __init__.py
       - name: Unit and security tests

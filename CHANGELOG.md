@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add a reproducible runtime-only distribution builder with source provenance; keep adversarial tests in the development repository and scan all shipped files with native Hermes security checks.
 - Add read-only Traditional Chinese feedback previews and explicit `肯定` / `更正` aliases.
 - Distinguish supported persistent preference statements from one-off, ambiguous, quoted, conditional, conflicting, and sensitive feedback without calling a model or saving preview text.
 - Skip recognized temporary/ambiguous feedback during passive concept extraction.

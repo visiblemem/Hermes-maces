@@ -18,7 +18,7 @@ dev = ["pytest>=8,<9", "ruff>=0.5,<1", "pyyaml>=6,<7"]
 where = ["src"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "scripts"]
 testpaths = ["tests"]
 markers = ["e2e: requires the real Hermes PluginManager"]
 
