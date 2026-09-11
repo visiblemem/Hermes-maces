@@ -1,0 +1,22 @@
+{
+  "files": {
+    "LICENSE": "8bcfd1a1096fb6312c1582944582c3b4622dfcaf7d137714dde14812ff7ac2fb",
+    "__init__.py": "f45304f2621299a32767f22bdbecd9cce6e6e3744cd842446847ed1f5e8b881f",
+    "config.example.yaml": "d9b3ea5e95c8d0fa3fc7a45b394043a44705ec6e8ec3ffb1a9b52ed71f8866d1",
+    "docs/SECURITY.md": "d166dd5d5923008570717055a9784df4188a3046afe92fa3fb609d9c76708ea4",
+    "plugin.yaml": "3e4f1b53f44e1aac9d47a817cc3361d8bbf235e8f3d149407e501261f20f7362",
+    "src/maces/__init__.py": "a0043a3c0e5a9e11c1c0d0e093aabaca1caa5e9959d71ba6d42bae53c945c24b",
+    "src/maces/engine.py": "9cfa7541c788c4a547f6a81f05aec83d8ee6c51eef5df711ac87f027eda8beae",
+    "src/maces/feedback.py": "6cc9964b2060ebffb9465467a180d0f17baaf036d4b1419afd2a36b000acade4",
+    "src/maces/influence.py": "5d519e2ee5f805e95470d6f2c480952bc6232442e88a047e6d775f977a0b9ec8",
+    "src/maces/models.py": "2311bce062edf125c828f743e7a53282fd59f472a45b9b6e02cbbeecfff684a1",
+    "src/maces/plugin.py": "4ce797b8a981d04629f437f3ab0e5a4a9515816318a9f609c16a4b258bc92e0e",
+    "src/maces/policy.py": "2836a76a2f1c045394e8881a8bf21b98516213ee877369f66b2b34cd267749da",
+    "src/maces/secure_store.py": "3a6d221ed951c3908897393a1d784ba4baa8f3ee84662537a50ece5120ce3a9e",
+    "src/maces/store.py": "925e0c3d92f1bd206c81651c5d5dc16d50b0f3e371f250c92e759b7352e5dcbd",
+    "src/maces/validation.py": "82858f4de3c6e0ab64125ecccdd4682051be65dd796156f7e41b558121018311"
+  },
+  "format": 1,
+  "repository": "https://github.com/visiblemem/Hermes-maces",
+  "source_commit": "751b024e1fa0ba2e082bc9168a78550b93f17cb4"
+}
