@@ -28,10 +28,12 @@ CREATE TABLE IF NOT EXISTS events(
  subject TEXT, confidence REAL NOT NULL, payload_json TEXT NOT NULL, occurred_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS patterns(
  pattern_key TEXT PRIMARY KEY, label TEXT NOT NULL, weight REAL NOT NULL,
- evidence_count INTEGER NOT NULL, last_event_id TEXT NOT NULL, last_seen TEXT NOT NULL);
+ evidence_count INTEGER NOT NULL, last_event_id TEXT NOT NULL, last_seen TEXT NOT NULL,
+ operator_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(operator_confirmed IN (0,1)));
 CREATE TABLE IF NOT EXISTS edges(
  key_a TEXT NOT NULL, key_b TEXT NOT NULL, weight REAL NOT NULL,
  evidence_count INTEGER NOT NULL, last_seen TEXT NOT NULL,
+ operator_confirmed INTEGER NOT NULL DEFAULT 0 CHECK(operator_confirmed IN (0,1)),
  PRIMARY KEY(key_a,key_b));
 CREATE TABLE IF NOT EXISTS candidates(
  candidate_key TEXT PRIMARY KEY, label TEXT NOT NULL, occurrences INTEGER NOT NULL,
@@ -189,6 +191,19 @@ class CognitiveStore:
 
     def _initialize(self, db: sqlite3.Connection) -> None:
         db.executescript(SCHEMA)
+        # executescript commits its caller's transaction; serialize additive migrations again.
+        db.execute("BEGIN IMMEDIATE")
+        migrated = []
+        for table in ("patterns", "edges"):
+            columns = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+            if "operator_confirmed" not in columns:
+                db.execute(
+                    f"ALTER TABLE {table} ADD COLUMN operator_confirmed INTEGER "
+                    "NOT NULL DEFAULT 0 CHECK(operator_confirmed IN (0,1))"
+                )
+                migrated.append(table)
+        if migrated:
+            self._journal_tx(db, "migration.feedback_evidence", None, {"tables": migrated})
         self._migrate_learning_proposals(db)
 
     def _migrate_learning_proposals(self, db: sqlite3.Connection) -> None:
@@ -388,7 +403,12 @@ class CognitiveStore:
         )
         db.execute(f"DELETE FROM patterns WHERE pattern_key IN ({marks})", keys)
 
-    def put_pattern(self, key: str, label: str, weight: float, event_id: str, seen: str) -> None:
+    def put_pattern(
+        self, key: str, label: str, weight: float, event_id: str, seen: str,
+        *, operator_confirmed: bool | None = None,
+    ) -> None:
+        if operator_confirmed is not None and not isinstance(operator_confirmed, bool):
+            raise ValueError("operator_confirmed must be boolean or None")
         label = str(label).strip().lower()
         cleaned, scrubbed = scrub_text(label)
         if scrubbed or cleaned != label or reject_sensitive_candidate(label):
@@ -404,14 +424,15 @@ class CognitiveStore:
         def op(db: sqlite3.Connection) -> None:
             db.execute(
                 """INSERT INTO patterns
-                   (pattern_key,label,weight,evidence_count,last_event_id,last_seen)
-                   VALUES(?,?,?,?,?,?)
+                   (pattern_key,label,weight,evidence_count,last_event_id,last_seen,operator_confirmed)
+                   VALUES(?,?,?,?,?,?,?)
                    ON CONFLICT(pattern_key) DO UPDATE SET
                      label=excluded.label,
                      weight=excluded.weight,
                      evidence_count=patterns.evidence_count+1,
                      last_event_id=excluded.last_event_id,
-                     last_seen=excluded.last_seen""",
+                     last_seen=excluded.last_seen,
+                     operator_confirmed=COALESCE(?,patterns.operator_confirmed)""",
                 (
                     key,
                     label,
@@ -419,8 +440,16 @@ class CognitiveStore:
                     1,
                     safe_event_id,
                     safe_seen,
+                    int(bool(operator_confirmed)),
+                    operator_confirmed,
                 ),
             )
+            if operator_confirmed is False:
+                # A one-concept correction must also withdraw every incident association.
+                db.execute(
+                    "UPDATE edges SET weight=0,operator_confirmed=0 WHERE key_a=? OR key_b=?",
+                    (key, key),
+                )
             if event_count + seen_count:
                 self._journal_tx(
                     db,
@@ -471,7 +500,12 @@ class CognitiveStore:
                 (excess,),
             )
 
-    def put_edge(self, a: str, b: str, weight: float, seen: str) -> None:
+    def put_edge(
+        self, a: str, b: str, weight: float, seen: str,
+        *, operator_confirmed: bool | None = None,
+    ) -> None:
+        if operator_confirmed is not None and not isinstance(operator_confirmed, bool):
+            raise ValueError("operator_confirmed must be boolean or None")
         if a == b:
             return
         if not _is_internal_key(a) or not _is_internal_key(b):
@@ -481,13 +515,15 @@ class CognitiveStore:
 
         def op(db: sqlite3.Connection) -> None:
             db.execute(
-                """INSERT INTO edges(key_a,key_b,weight,evidence_count,last_seen)
-                   VALUES(?,?,?,?,?)
+                """INSERT INTO edges(key_a,key_b,weight,evidence_count,last_seen,operator_confirmed)
+                   VALUES(?,?,?,?,?,?)
                    ON CONFLICT(key_a,key_b) DO UPDATE SET
                      weight=excluded.weight,
                      evidence_count=edges.evidence_count+1,
-                     last_seen=excluded.last_seen""",
-                (a, b, max(0.0, min(1.0, float(weight))), 1, safe_seen),
+                     last_seen=excluded.last_seen,
+                     operator_confirmed=COALESCE(?,edges.operator_confirmed)""",
+                (a, b, max(0.0, min(1.0, float(weight))), 1, safe_seen,
+                 int(bool(operator_confirmed)), operator_confirmed),
             )
             if seen_count:
                 self._journal_tx(
@@ -1081,7 +1117,8 @@ class CognitiveStore:
                 dict(row)
                 for row in db.execute(
                     """SELECT label,weight,evidence_count,last_seen FROM patterns
-                       WHERE weight>=? ORDER BY weight DESC,last_seen DESC LIMIT ?""",
+                       WHERE operator_confirmed=1 AND weight>0 AND weight>=?
+                       ORDER BY weight DESC,last_seen DESC LIMIT ?""",
                     (threshold, bounded),
                 ).fetchall()
             ]

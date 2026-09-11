@@ -29,7 +29,7 @@ def test_idempotent_ingestion_and_edges(tmp_path: Path) -> None:
     assert engine.observe(item) == {"patterns": 0, "edges": 0, "gaps": 0, "proposals": 0}
 
 
-def test_one_correction_outweighs_three_confirmations(tmp_path: Path) -> None:
+def test_one_correction_withdraws_three_confirmations(tmp_path: Path) -> None:
     store = CognitiveStore(tmp_path / "maces.db")
     engine = MacesEngine(store)
     for index in range(3):
@@ -37,6 +37,9 @@ def test_one_correction_outweighs_three_confirmations(tmp_path: Path) -> None:
     engine.observe(event("answer.corrected", ["corrected-topic"], "correction"))
     weights = {row["label"]: row["weight"] for row in store.list_table("patterns")}
     assert weights["corrected-topic"] < weights["steady-topic"]
+    assert weights["corrected-topic"] == 0
+    assert engine.influence(["corrected-topic"]).render() == ""
+    assert "corrected-topic" not in engine.influence(["steady-topic"]).render()
 
 
 def test_decay_forgets_after_90_idle_days(tmp_path: Path) -> None:

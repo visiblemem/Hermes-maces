@@ -86,11 +86,11 @@ MACES receives selected lifecycle events from the host agent. It extracts only b
 
 ### 2. Associate
 
-Repeated concepts, validated retrieval usage, and explicit operator feedback create or adjust profile-local associations. Mention frequency alone does not automatically become a preference.
+Repeated concepts and validated retrieval usage record profile-local occurrence evidence. Only explicit operator confirmation gives concepts and associations positive advisory weight. Neither mention frequency nor search success establishes a preference.
 
 ### 3. Weight
 
-Each signal changes a bounded advisory weight. Negative or corrected feedback can reduce influence. Strict thresholds prevent speculative candidates from entering inference too early.
+Explicit confirmation raises a bounded advisory weight. Explicit correction immediately withdraws the concept and its incident associations from influence. Passive mentions and retrievals cannot reactivate it; fresh operator confirmation is required.
 
 ### 4. Influence
 
@@ -134,13 +134,13 @@ Each profile has an independent MACES database and must be evaluated independent
 ## Verified compatibility
 
 - Verified Hermes host baseline: `hermes-agent==0.18.2`.
-- CI covers Python 3.11, 3.12, and 3.13 on Ubuntu and macOS.
-- The blocking real-PluginManager E2E is pinned to Hermes Agent 0.18.2 and Python 3.11.
+- CI targets Python 3.11, 3.12, and 3.13 on Ubuntu, macOS, and Windows.
+- Real-PluginManager E2E targets Hermes Agent 0.18.2 and 0.21.1 on Ubuntu and Windows with Python 3.11. The 0.21.1 host is pinned to source commit `2237be355906fbe6065ce1815711eee52b2d646e`, not an unavailable PyPI version.
 - Hermes currently uses `hermes plugins install owner/repo` as the distribution and registration path for external subsystems.
 - That command shallow-clones the repository's default branch and does not pin a GitHub Release tag.
 - `main` is therefore the version users install and must contain only reviewed, CI-green commits.
 
-Windows and Hermes versions outside the listed baseline are not yet part of the verified compatibility matrix.
+The expanded CI targets are not a claim of completed validation. Check the workflow results for the exact MACES commit before treating an OS/host combination as verified. Real-world Shadow validation remains separate.
 
 ## Distribution and installation on Hermes
 
@@ -229,7 +229,7 @@ learnable_tool_fields:
 
 Do not allowlist write tools, file contents, credentials, paths, complete result bodies, or arbitrary unreviewed fields.
 
-A tool call can reinforce concepts only when all of the following are true:
+A tool call can record occurrence evidence only when all of the following are true:
 
 ```text
 status == "ok"
@@ -237,7 +237,7 @@ error_type is None
 tool_name is present in learnable_tool_fields
 ```
 
-Only explicitly listed string fields are read. Full arguments and result bodies are never persisted. Failed, cancelled, approval-denied, unlisted, or status-ambiguous calls do not create a positive signal.
+Only explicitly listed string fields are read. Full arguments and result bodies are never persisted. Failed, cancelled, approval-denied, unlisted, or status-ambiguous calls do not create evidence. Even a successful call does not raise preference or association weight.
 
 ## Traditional Chinese learning
 
@@ -260,6 +260,12 @@ Feedback is available only as an explicit operator command, never as a model too
 ```
 
 Invalid feedback returns usage text and writes nothing. Status output is aggregate-only and never displays raw sensitive material.
+
+`corrected` retracts a previous recommendation; it is not a new instruction to avoid the concept in every future context. Use Hermes native instructions/memory for durable prohibitions. `confirmed` may explicitly establish a new preference after a correction. Ordinary conversational approval is not automatically equivalent to this operator command.
+
+### Upgrading existing MACES data
+
+An additive migration marks existing pattern and edge weights as unconfirmed, preserving their stored weights and evidence counts at migration. Old retrieval-derived weights cannot be distinguished reliably from explicit preferences, so they are excluded from influence and `/maces-top` until freshly confirmed. New confirmation starts from zero for unconfirmed weights; confirming two concepts separately does not validate their old association. The migration is recorded once per upgraded database and does not write Hermes memory, Skills, or Hindsight.
 
 ## Privacy and reliability
 

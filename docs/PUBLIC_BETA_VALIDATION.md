@@ -15,6 +15,7 @@
 - Completed turns: pending; minimum 30
 - Distinct sessions: pending; minimum 5
 - Successful allowlisted retrievals: pending; minimum 10
+- Explicit operator confirmations/corrections: pending; retrieval frequency is not confirmation
 - Gateway restarts: pending; minimum 1
 - Disable/restart/re-enable cycles: pending; minimum 1
 

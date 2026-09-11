@@ -23,6 +23,8 @@ Hook kwargs are never profile inputs. A forged `profile_id` is inert.
 
 Pending passive extraction is keyed by `(profile, session_id, turn_id)` and protected by an `RLock`. Completion consumes it; API errors and session end/finalize/reset hooks clear it. Daily decay is guarded by `last_decay_at`, not by an assumption that every session hook represents a unique day.
 
+Observers are best-effort: Hermes 0.21.1 can skip overlapping or timed-out callbacks. MACES does not disable this protection or claim lossless event capture. Pending extraction is capped at 256 turns per runtime; overflow evicts the oldest entry and increments the aggregate `pending_evictions` status metric. A later completion can extract from the host-provided user message if its cache entry was evicted. Session cleanup clears remaining entries. Bounded asynchronous persistence and full hook-latency measurement remain future work.
+
 All hook exceptions degrade MACES only. Hermes continues normally.
 
 ## Persistence

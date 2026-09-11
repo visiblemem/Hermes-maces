@@ -25,8 +25,8 @@ _DEFAULT_ZH_STOPWORDS = (
 @dataclass(frozen=True, slots=True)
 class MacesPolicy:
     reinforcement_alpha: float = 0.10
-    retrieval_alpha: float = 0.03
-    correction_beta: float = 0.35
+    retrieval_alpha: float = 0.03  # Legacy constructor field; no preference reinforcement.
+    correction_beta: float = 0.35  # Legacy constructor field; correction now withdraws.
     decay_tau_days: float = 45.0
     weight_floor: float = 0.02
     outbound_edge_cap: float = 3.0
@@ -50,10 +50,12 @@ class MacesPolicy:
         return min(1.0, weight + self.reinforcement_alpha * (1.0 - weight))
 
     def reinforce_retrieval(self, weight: float) -> float:
-        return min(1.0, weight + self.retrieval_alpha * (1.0 - weight))
+        """Compatibility helper: retrieval frequency is not preference evidence."""
+        return max(0.0, min(1.0, weight))
 
     def penalize(self, weight: float) -> float:
-        return max(0.0, weight * (1.0 - self.correction_beta))
+        """Explicit correction withdraws the previous recommendation immediately."""
+        return 0.0
 
     def learnable_fields_for(self, tool_name: str) -> tuple[str, ...]:
         return self.learnable_tool_fields.get(str(tool_name), ())

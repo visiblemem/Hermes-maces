@@ -17,9 +17,9 @@ The database path is `<profile-HERMES_HOME>/data/maces/subconscious.db`.
 ## Signal semantics
 
 - `task.completed`: occurrence/co-occurrence only; it does not raise node or edge weight.
-- validated `retrieval.used`: low positive reinforcement.
+- validated `retrieval.used`: occurrence/co-occurrence evidence only, never preference reinforcement.
 - explicit `answer.confirmed`: positive reinforcement.
-- explicit `answer.corrected`: asymmetric penalty.
+- explicit `answer.corrected`: immediate withdrawal of the concept and its incident associations.
 - staged-origin material and non-operator events cannot reinforce the substrate.
 - passive Traditional Chinese candidates are excluded from influence until recurrence across the configured number of distinct sessions promotes them to zero-weight patterns.
 
@@ -28,6 +28,8 @@ The database path is `<profile-HERMES_HOME>/data/maces/subconscious.db`.
 Influence is a compact `[intuition — advisory, unverified]` block containing only validated pattern labels, association labels, and open gap topics that clear the minimum weight. It is bounded by a shared item budget and a hard character budget. When no signal clears the threshold, the result is empty. Shadow mode always injects nothing.
 
 Influence never reads staged artifact content, raw events, complete tables, or Canon. Current user instructions and approved knowledge always outrank MACES.
+
+Nodes and edges require persisted `operator_confirmed` provenance and a strictly positive weight, even if the configured minimum is zero. Legacy weights remain unconfirmed until new explicit feedback. A correction is a retraction, not a semantic prohibition; durable instructions remain Hermes-owned.
 
 ## Surfacing
 

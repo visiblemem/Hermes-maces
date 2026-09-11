@@ -33,6 +33,7 @@ _CJK_RUN = re.compile(r"[\u3400-\u9fff]+")
 _NEGATIONS = ("不要", "別", "不喜歡", "不想要", "不需要", "避免", "不是", "不可")
 _POSITIVE_PREFIXES = ("我喜歡", "我偏好", "我想要", "喜歡", "偏好", "想要", "請用", "使用")
 _PREFIX_WINDOW = 8
+_MAX_PENDING_TURNS = 256
 _USAGE = (
     "Usage: /maces-feedback confirmed <concept,concept>\n"
     "       /maces-feedback corrected <concept,concept>"
@@ -287,6 +288,7 @@ class ProfileRuntime:
     pending: dict[tuple[str, str, str], PendingTurn] = field(default_factory=dict)
     lock: threading.RLock = field(default_factory=threading.RLock)
     error_count: int = 0
+    pending_evictions: int = 0
     last_influence_items: int = 0
     last_influence_latency_ms: float = 0.0
 
@@ -322,6 +324,11 @@ class ProfileRuntime:
         try:
             extracted = _extract_passive(str(user_message or ""), self.policy)
             with self.lock:
+                # Host observer hooks may be skipped under load; completion is not guaranteed.
+                self.pending.pop(key, None)
+                if len(self.pending) >= _MAX_PENDING_TURNS:
+                    self.pending.pop(next(iter(self.pending)))
+                    self.pending_evictions += 1
                 self.pending[key] = PendingTurn(extracted)
             self._journal_scrubbed(extracted.scrubbed)
             if self.shadow_mode:
@@ -467,6 +474,8 @@ class ProfileRuntime:
             db_size = Path(self.engine.store.path).stat().st_size
             with self.lock:
                 error_count = self.error_count
+                pending_count = len(self.pending)
+                pending_evictions = self.pending_evictions
                 influence_items = self.last_influence_items
                 influence_latency_ms = self.last_influence_latency_ms
             return (
@@ -475,6 +484,7 @@ class ProfileRuntime:
                 f"gaps={counts['gaps']} candidates={counts['candidates']} "
                 f"db_bytes={db_size} last_decay_at={decay} "
                 f"errors={error_count} scrubbed={audit['scrubbed_candidates']} "
+                f"pending={pending_count} pending_evictions={pending_evictions} "
                 f"last_influence_items={influence_items} "
                 f"last_influence_ms={influence_latency_ms:.2f}"
             )

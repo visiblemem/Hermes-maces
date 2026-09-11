@@ -28,6 +28,8 @@ class InfluenceEngine:
             row
             for row in patterns
             if is_valid_pattern_label(str(row["label"]))
+            and row.get("operator_confirmed") == 1
+            and float(row["weight"]) > 0
             and float(row["weight"]) >= self.policy.minimum_influence_weight
         ]
         attention_candidates = [
@@ -45,6 +47,8 @@ class InfluenceEngine:
             row
             for row in endpoint_patterns
             if is_valid_pattern_label(str(row["label"]))
+            and row.get("operator_confirmed") == 1
+            and float(row["weight"]) > 0
             and float(row["weight"]) >= self.policy.minimum_influence_weight
         ]
         labels = {str(row["pattern_key"]): str(row["label"]) for row in safe_endpoints}
@@ -58,6 +62,8 @@ class InfluenceEngine:
             for row in edges
             if str(row["key_a"]) in weighted
             and str(row["key_b"]) in weighted
+            and row.get("operator_confirmed") == 1
+            and float(row["weight"]) > 0
             and float(row["weight"]) >= self.policy.minimum_influence_weight
         ]
 

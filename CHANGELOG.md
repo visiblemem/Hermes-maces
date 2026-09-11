@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Successful retrieval records occurrence evidence without reinforcing preference or association weights.
+- Explicit correction immediately retracts the concept and all incident associations; passive events cannot reactivate them.
+- Persist operator-confirmation provenance, including a fail-closed additive migration for legacy weights.
+- Reject zero-weight influence even when the configured threshold is zero; `/maces-top` shows only confirmed positive weights.
+- Bound pending extraction state when newer hosts skip overlapping observers, and expose aggregate eviction counts.
+- Add feedback, migration, restart, and profile-isolation regressions plus active-mode PluginManager coverage.
+- Expand CI targets to Windows and pinned Hermes 0.21.1 source without claiming completed Shadow validation.
+
 ## 1.2.0
 
 - Resolve state through the trusted active Hermes profile home.
